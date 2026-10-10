@@ -120,7 +120,7 @@ class ArabicStringsParityTest {
                     if (isTranslatable(value)) where else null
                 }
             }
-            assertEquals("${file.parentFile.name}: ${untranslated.take(8)}", emptyList<String>(), untranslated)
+            assertEquals("${file.parentFile?.name}: ${untranslated.take(8)}", emptyList<String>(), untranslated)
         }
     }
 

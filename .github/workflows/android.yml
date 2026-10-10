@@ -6,7 +6,7 @@ name: Android
 
 on:
   push:
-    branches: [main]
+    branches: [main, codex/arabic-standalone-phase2]
   pull_request:
   workflow_dispatch:
 

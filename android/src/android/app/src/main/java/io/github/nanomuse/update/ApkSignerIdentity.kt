@@ -3,7 +3,8 @@ package io.github.nanomuse.update
 import android.content.Context
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
-import androidx.core.content.pm.PackageInfoCompat
+import android.content.pm.Signature
+import android.os.Build
 import com.openminis.app.logging.AppLogger
 import java.io.File
 import java.security.MessageDigest
@@ -100,9 +101,31 @@ object ApkSignerIdentity {
         load: (PackageManager) -> PackageInfo?,
     ): Set<String> = runCatching {
         val info = load(pm) ?: return emptySet<String>()
-        PackageInfoCompat.getSignatures(info).map { fingerprint(it.toByteArray()) }.toSet()
+        certificates(info).map { fingerprint(it.toByteArray()) }.toSet()
     }.getOrElse { e ->
         AppLogger.warning(TAG, "reading a signing certificate failed: ${e.javaClass.simpleName}")
         emptySet()
+    }
+
+    /**
+     * The signing certificates a [PackageInfo] carries.
+     *
+     * `signingInfo` (API 28 and up) is the one that answers for a downloaded archive as well as
+     * for the installed app; below it the deprecated `signatures` array is all there is, which is
+     * why [CERTIFICATE_FLAGS] asks for both flags rather than the newer one alone.
+     *
+     * `apkContentsSigners`, not `signingCertificateHistory`: what has to match is the key the APK
+     * in hand was signed with against the key this app is signed with *now*. The history is the
+     * lineage a key rotation leaves behind, and accepting it would let an APK signed with a key
+     * the app has already rotated away from install over it.
+     */
+    private fun certificates(info: PackageInfo): List<Signature> {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val signing = info.signingInfo ?: return emptyList()
+            return signing.apkContentsSigners.toList()
+        }
+        @Suppress("DEPRECATION")
+        val legacy = info.signatures
+        return legacy?.toList().orEmpty()
     }
 }
