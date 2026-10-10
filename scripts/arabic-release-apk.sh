@@ -277,6 +277,9 @@ cp "$apk" "$out"
 ( cd "$NM_ROOT/dist" && sha256sum "$(basename "$out")" > "$(basename "$out").sha256" && cat "$(basename "$out").sha256" )
 ls -la "$out"
 
+publish_flag=false
+if [ "$publish" = 1 ]; then publish_flag=true; fi
+
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
   {
     echo "version=$version_name"
@@ -285,11 +288,15 @@ if [ -n "${GITHUB_OUTPUT:-}" ]; then
     echo "apk=$out"
     echo "sha256=$out.sha256"
     echo "cert=$fingerprint"
+    echo "publish=$publish_flag"
   } >>"$GITHUB_OUTPUT"
 fi
 
 # ---- the release -------------------------------------------------------------
-if [ "$publish" = 1 ] && [ -n "${GITHUB_OUTPUT:-}" ]; then
+# Note the condition: whether to publish is `--publish`, not whether a runner happens to be there.
+# Tying it to $GITHUB_OUTPUT as well meant a `--publish` run outside Actions built, signed and
+# then kept quiet about not releasing anything.
+if [ "$publish" = 1 ]; then
   echo "== publishing $tag"
   if [ -z "$notes" ]; then
     notes="$RUNNER_TEMP/arabic-notes.md"
@@ -311,6 +318,9 @@ EOF
   git push origin "$tag"
   gh release create "$tag" --latest --title "nanoMuse-Arabic $version_name" \
     --notes-file "$notes" "$out" "$out.sha256"
+else
+  echo "== built and verified only: no --publish, so no tag and no release"
+  echo "   the signed APK is at $out"
 fi
 
 echo "== done: $version_name ($tag)"

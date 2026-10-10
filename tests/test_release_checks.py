@@ -30,6 +30,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 READER = ROOT / "scripts" / "apksigner-fingerprint.sh"
 RELEASE = ROOT / "scripts" / "arabic-release-apk.sh"
+DECIDER = ROOT / "scripts" / "should-publish.sh"
+WORKFLOW = ROOT / ".github" / "workflows" / "arabic-release.yml"
 DIGEST = "9802a6008e5aefad9e2847a4006a9ed189025170cd4c0558c4c16c0e18a12a5b"
 COLONS = ":".join(DIGEST[i : i + 2] for i in range(0, 64, 2)).upper()
 
@@ -141,6 +143,48 @@ def test_the_alpine_detection_tells_a_gzip_from_a_tar(tmp_path: Path) -> None:
     assert magic_of(tar) != "1f8b", "a tar is being read as a gzip"
     assert ustar_of(tar) == "ustar", "a tar no longer carries ustar at offset 257"
     assert ustar_of(gz) != "ustar", "a gzip is being read as a tar"
+
+
+@pytest.mark.parametrize(
+    ("event", "value", "expected"),
+    [
+        ("workflow_dispatch", "true", "true"),
+        ("workflow_dispatch", "True", "true"),
+        ("workflow_dispatch", "false", "false"),
+        ("workflow_dispatch", "", "false"),
+        ("pull_request", "", "true"),
+        ("pull_request", "false", "true"),
+    ],
+)
+def test_the_publish_decision(event: str, value: str, expected: str) -> None:
+    """Run #5 built, signed, verified a real APK and published nothing, because the decision was
+    asked in a GitHub expression: `inputs.publish` is a boolean for a `type: boolean` input, and
+    `inputs.publish == 'true'` compares the number 1 with NaN. The shell answers it now."""
+    result = subprocess.run(
+        ["bash", str(DECIDER), event, value], capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == expected, f"{event}/{value!r} → {result.stdout.strip()!r}"
+
+
+def test_the_workflow_asks_that_script_and_shows_what_it_decided() -> None:
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "should-publish.sh" in text, "the publish decision is a GitHub expression again"
+    assert "inputs.publish == 'true'" not in text, (
+        "a boolean dispatch input is being compared with the string 'true'"
+    )
+    # The summary must read the value the build actually used, not the input again, or it can
+    # report a publication that did not happen.
+    assert "steps.release.outputs.publish" in text
+
+
+def test_the_release_script_says_when_it_did_not_publish() -> None:
+    """The other half of the same confusion: `--publish` was also gated on the runner's
+    environment, so a local run with it would build, sign and stay silent."""
+    script = RELEASE.read_text(encoding="utf-8")
+    assert 'if [ "$publish" = 1 ]; then' in script
+    assert "built and verified only" in script, "nothing says why a signed APK was not released"
+    assert 'echo "publish=$publish_flag"' in script
 
 
 def test_the_release_script_reads_the_certificate_through_this_reader() -> None:

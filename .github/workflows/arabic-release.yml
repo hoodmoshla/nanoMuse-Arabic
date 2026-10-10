@@ -159,13 +159,19 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ARABIC_CERT_SHA256: ${{ vars.ARABIC_CERT_SHA256 }}
+          EVENT_NAME: ${{ github.event_name }}
+          PUBLISH_INPUT: ${{ inputs.publish }}
         run: |
           set -euo pipefail
           args=()
           if [ -n "${{ inputs.revision }}" ]; then args+=(--revision "${{ inputs.revision }}"); fi
-          publish="${{ github.event_name == 'pull_request' || inputs.publish == 'true' }}"
+          # Asked in bash rather than in an expression: `inputs.publish` is a boolean, and
+          # comparing it with the string 'true' compared the number 1 with NaN. See
+          # scripts/should-publish.sh for the whole of it.
+          publish="$(bash scripts/should-publish.sh "$EVENT_NAME" "$PUBLISH_INPUT")"
+          echo "event=$EVENT_NAME publish input='${PUBLISH_INPUT:-<unset>}' → publish=$publish"
           if [ "$publish" = "true" ]; then args+=(--publish); fi
-          echo "running: scripts/arabic-release-apk.sh ${args[*]:-(defaults)}"
+          echo "running: scripts/arabic-release-apk.sh ${args[*]:-(no arguments)}"
           bash scripts/arabic-release-apk.sh "${args[@]}"
 
       # Kept whether or not it was published: a build that failed the pin, or a verify-only run,
@@ -189,10 +195,10 @@ jobs:
               echo "- built \`${{ steps.release.outputs.version }}\` (versionCode ${{ steps.release.outputs.version_code }})"
               echo "- signature checked against the pinned certificate: \`${{ steps.release.outputs.cert }}\`"
               echo "- APK: \`$(basename "${{ steps.release.outputs.apk }}")\` — $(du -h "${{ steps.release.outputs.apk }}" | cut -f1)"
-              if [ "${{ inputs.publish }}" = "true" ]; then
+              if [ "${{ steps.release.outputs.publish }}" = "true" ]; then
                 echo "- published as [${{ steps.release.outputs.tag }}](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.release.outputs.tag }}), marked Latest, so the app's Version row finds it"
               else
-                echo "- not published: this run only built and verified"
+                echo "- NOT published: this run built and verified only (publish=${{ steps.release.outputs.publish }})"
               fi
             else
               echo "Nothing was published. The job log above says where it stopped; the step before"
