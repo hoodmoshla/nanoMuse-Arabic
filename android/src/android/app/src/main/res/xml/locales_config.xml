@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <locale-config xmlns:android="http://schemas.android.com/apk/res/android">
     <locale android:name="en"/>
+    <locale android:name="ar"/>
     <locale android:name="zh"/>
     <!-- zh-Hant carries a full Traditional Chinese translation in
          values-zh-rTW but was missing here, so Android never offered it in

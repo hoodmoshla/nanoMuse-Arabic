@@ -182,6 +182,7 @@ private data class LanguageOption(val code: String, val flag: String, val label:
 private val languageOptions = listOf(
     LanguageOption("", "\uD83C\uDF10", ""),
     LanguageOption("en", "\uD83C\uDDFA\uD83C\uDDF8", "English"),
+    LanguageOption("ar", "\uD83C\uDDF8\uD83C\uDDE6", "العربية"),
     LanguageOption("zh", "\uD83C\uDDE8\uD83C\uDDF3", "简体中文"),
     // zh-Hant: values-zh-rTW has carried a Traditional Chinese translation
     // all along, but the picker never listed it and locales_config.xml never
