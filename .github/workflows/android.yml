@@ -80,17 +80,6 @@ jobs:
       - name: Arabic resources
         run: python3 scripts/check-arabic-resources.py
 
-      # Every Kotlin source, compiled before anything expensive. Gradle's own message for a
-      # Kotlin failure is the six words "Compilation error. See log for more details" with the
-      # file and line in the compiler's output far above it, and the APK job takes half an hour
-      # to reach this point from a cold cache; here the same error surfaces in three minutes,
-      # with the units' sources too, which `assembleDebug` never compiles.
-      - name: Kotlin compiles
-        working-directory: android/src/android
-        run: |
-          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$NDK_VERSION"
-          ./gradlew :app:compileDebugKotlin :app:compileDebugUnitTestKotlin --console=plain --no-daemon
-
       - name: Native artifacts (proot, Alpine rootfs, rclone.aar)
         env:
           GOTOOLCHAIN: auto
@@ -99,6 +88,48 @@ jobs:
           export GOROOT="$(go env GOROOT)" GOPATH="$(go env GOPATH)"
           export PATH="$GOPATH/bin:$PATH" # gomobile / gobind land there
           bash scripts/android/build-natives.sh
+
+      # Gradle reads `rclone.aar` out of `app/libs` while it resolves the module's classpath — at
+      # configuration time, before a line of Kotlin is compiled. A missing .aar is therefore not a
+      # compile error: it is "Could not find :rclone:. Searched in: .../app/libs/rclone.aar", with
+      # no Kotlin in the message and no hint that a build step had to run first. Every path here is
+      # one `scripts/android/build-natives.sh` is supposed to have written; naming the missing one
+      # is the difference between a five-second diagnosis and an afternoon.
+      - name: The files Gradle will ask for
+        run: |
+          set -euo pipefail
+          missing=""
+          for f in \
+            android/src/android/app/libs/rclone.aar \
+            android/src/android/app/src/main/assets/proot-aarch64 \
+            android/src/android/app/src/main/assets/alpine-minirootfs.tar.gz \
+            android/src/android/app/src/main/jniLibs/arm64-v8a/libproot-loader.so \
+            android/src/android/app/src/main/jniLibs/arm64-v8a/libproot-loader32.so
+          do
+            if [ -s "$f" ]; then
+              printf 'ok    %6s  %s\n' "$(du -h "$f" | cut -f1)" "$f"
+            else
+              printf 'MISSING        %s\n' "$f"
+              missing="$missing $f"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::scripts/android/build-natives.sh did not produce:$missing"
+            echo "rclone.aar is consumed as a flatDir dependency of :app, so Gradle fails on it"
+            echo "before compiling anything. The natives step has to run first, and to succeed."
+            exit 1
+          fi
+
+      # Every Kotlin source, both source sets. Gradle's own message for a Kotlin failure is the
+      # six words "Compilation error. See log for more details" with the file and line in the
+      # compiler's output far above it, so compiling here — after the natives, before the APK —
+      # puts that error in the summary in three minutes instead of after the packaging, and
+      # checks the unit-test sources too, which `assembleDebug` never compiles.
+      - name: Kotlin compiles
+        working-directory: android/src/android
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$NDK_VERSION"
+          ./gradlew :app:compileDebugKotlin :app:compileDebugUnitTestKotlin --console=plain --no-daemon
 
       - name: assembleDebug
         working-directory: android/src/android

@@ -90,6 +90,16 @@ grep -qE "versionCode = $version_code" "$gradle_file" || { echo "could not write
 python3 "$NM_ROOT/scripts/check-arabic-resources.py"
 bash "$NM_ROOT/scripts/android/build-natives.sh"
 
+# Gradle reads `rclone.aar` out of `app/libs` while it resolves the module's classpath, before it
+# compiles anything: without it the failure is "Could not find :rclone:." and nothing in the
+# message says a build step had to run first. Naming the missing file is cheaper than that.
+for f in "$NM_GRADLE_DIR/app/libs/rclone.aar" \
+  "$NM_APP_MAIN/assets/proot-aarch64" \
+  "$NM_APP_MAIN/assets/alpine-minirootfs.tar.gz" \
+  "$NM_APP_MAIN/jniLibs/arm64-v8a/libproot-loader.so"; do
+  [ -s "$f" ] || { echo "build-natives.sh did not produce $f" >&2; exit 1; }
+done
+
 echo "== unit tests"
 ( cd "$NM_GRADLE_DIR" && ./gradlew :app:testDebugUnitTest --tests 'io.github.nanomuse.*' --console=plain --no-daemon )
 
