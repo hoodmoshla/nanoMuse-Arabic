@@ -314,7 +314,11 @@ to nanoMuse and neither app touches the other's data.
 EOF
   fi
   [ -f "$notes" ] || { echo "release notes not found: $notes" >&2; exit 1; }
-  git tag -a "$tag" -m "nanoMuse-Arabic $version_name"
+  # A runner has no git identity and `git tag -a` needs one — the annotated tag carries a tagger.
+  # Without this the release builds, signs, verifies the pinned certificate and dies on the tag
+  # with "Committer identity unknown", which is where the first run that reached this line stopped.
+  git -c user.name="nanoMuse-Arabic" -c user.email="noreply@github.com" \
+    tag -a "$tag" -m "nanoMuse-Arabic $version_name"
   git push origin "$tag"
   gh release create "$tag" --latest --title "nanoMuse-Arabic $version_name" \
     --notes-file "$notes" "$out" "$out.sha256"

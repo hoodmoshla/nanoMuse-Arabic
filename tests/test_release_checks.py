@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import gzip
 import io
+import os
 import subprocess
 import tarfile
 from pathlib import Path
@@ -185,6 +186,75 @@ def test_the_release_script_says_when_it_did_not_publish() -> None:
     assert 'if [ "$publish" = 1 ]; then' in script
     assert "built and verified only" in script, "nothing says why a signed APK was not released"
     assert 'echo "publish=$publish_flag"' in script
+
+
+def test_the_annotated_tag_carries_a_tagger(tmp_path: Path) -> None:
+    """`git tag -a` needs an identity and a CI runner has none, so the release built, signed,
+    verified the pinned certificate and then died on the tag with "Committer identity unknown".
+
+    Both halves are run here: the command without an identity, which has to fail so the reason is
+    not imaginary, and the one the script uses, in a repository with no identity anywhere."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    blank = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    blank["HOME"] = str(tmp_path)  # no ~/.gitconfig to fall back on
+    blank["XDG_CONFIG_HOME"] = str(tmp_path)
+
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True, env=blank)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=a",
+            "-c",
+            "user.email=a@b",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "x",
+        ],
+        cwd=repo,
+        check=True,
+        env=blank,
+    )
+
+    without = subprocess.run(
+        ["git", "tag", "-a", "v1.0.1.1", "-m", "x"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        env=blank,
+        check=False,
+    )
+    assert without.returncode != 0, "an annotated tag without an identity now succeeds?"
+    assert "identity" in (without.stderr + without.stdout).lower()
+
+    with_identity = subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=nanoMuse-Arabic",
+            "-c",
+            "user.email=noreply@github.com",
+            "tag",
+            "-a",
+            "v1.0.1.1",
+            "-m",
+            "x",
+        ],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        env=blank,
+        check=False,
+    )
+    assert with_identity.returncode == 0, with_identity.stderr
+
+    script = RELEASE.read_text(encoding="utf-8")
+    assert 'git -c user.name="nanoMuse-Arabic"' in script, (
+        "the release script tags without an identity again"
+    )
 
 
 def test_the_release_script_reads_the_certificate_through_this_reader() -> None:
