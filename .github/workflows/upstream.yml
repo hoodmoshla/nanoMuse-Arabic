@@ -52,6 +52,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          # Named rather than left to the default branch: this job reads scripts/upstream-gap.py
+          # and the Arabic resources, which are on the Arabic branch and not on a plain main.
+          ref: ${{ env.ARABIC_BRANCH }}
           fetch-depth: 0
 
       # Only the commits and trees, no blobs: the report reads a handful of files through

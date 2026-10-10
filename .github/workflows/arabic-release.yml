@@ -50,6 +50,11 @@ permissions:
 
 env:
   NDK_VERSION: 27.2.12479018
+  # The branch this edition is built from. The checkout below names it instead of taking whatever
+  # branch was dispatched: the Actions page remembers the last one somebody picked, and a run
+  # started from `main` would otherwise build that tree, find no scripts/arabic-release-apk.sh and
+  # stop — or worse, find an older one.
+  ARABIC_BRANCH: codex/arabic-standalone-phase2
 
 jobs:
   release:
@@ -65,6 +70,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          # The Arabic branch's tree for a dispatch; the merge commit for the run this workflow
+          # starts on its own when a sync pull request is merged, where that exact commit is what
+          # is being released.
+          ref: ${{ github.event_name == 'pull_request' && github.sha || env.ARABIC_BRANCH }}
           submodules: recursive # android/deps/proot, the sandbox inside the APK
           fetch-depth: 0 # the tag is created from this checkout and points at it
 
