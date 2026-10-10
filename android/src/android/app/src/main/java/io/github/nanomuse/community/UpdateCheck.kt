@@ -18,10 +18,17 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * The installed version and the latest one, side by side (shared contract C2). The latest
- * comes from the download index on nanomuse.cn first, then GitHub's latest release; it is
+ * comes from this edition's own GitHub releases; it is
  * looked up at most once a day and the answer kept, with a "check now" for a stale or failed
  * check. Only the two lines of the Version row live on this; the in-app APK download on the
- * About page is the upstream UpdateChecker, untouched.
+ * About page is the [com.openminis.app.data.UpdateChecker], which reads the same repository.
+ *
+ * nanoMuse-Arabic: it reads the standalone edition's feed and nothing else. Upstream's
+ * download index (nanomuse.cn) and upstream's GitHub releases both carry the ENGLISH app,
+ * signed with a key this build does not share, so showing one of their versions here would
+ * offer an update that can never install. [State.noRelease] is the third answer — the feed
+ * was read and holds no release of this edition yet — so the row can say that plainly
+ * instead of calling it a failure.
  */
 object UpdateCheck {
     private const val TAG = "UpdateCheck"
@@ -29,11 +36,11 @@ object UpdateCheck {
     private const val KEY_LATEST = "latest"
     private const val KEY_CHECKED_AT = "checked_at"
     private const val KEY_FAILED = "failed"
+    private const val KEY_NO_RELEASE = "no_release"
 
-    /** Where "Update" goes on Android: the download page, with the APK and the store links. */
-    const val DOWNLOAD_URL = "https://nanomuse.cn/dl/"
-    const val INDEX_URL = "https://nanomuse.cn/dl/index.json"
-    const val GITHUB_LATEST_URL = "https://api.github.com/repos/nano-muse/nanoMuse/releases/latest"
+    /** Where "Update" goes: this edition's releases, never upstream's download page. */
+    const val DOWNLOAD_URL = "https://github.com/hoodmoshla/nanoMuse-Arabic/releases"
+    const val GITHUB_LATEST_URL = "https://api.github.com/repos/hoodmoshla/nanoMuse-Arabic/releases/latest"
 
     /** A check is repeated at most this often on its own. */
     const val FRESH_MS = 24L * 60 * 60 * 1000
@@ -43,12 +50,26 @@ object UpdateCheck {
         val latest: String? = null,
         /** When the last check ran, epoch ms (0 = never). */
         val checkedAt: Long = 0L,
-        /** The last check could not reach either source. */
+        /** No source could be reached. */
         val failed: Boolean = false,
+        /** A source was reached and this edition has published no release yet. */
+        val noRelease: Boolean = false,
         val checking: Boolean = false,
     ) {
         /** The latest is newer than this build. */
         val newer: Boolean get() = latest != null && isNewer(latest, BuildConfig.VERSION_NAME)
+    }
+
+    /** What the feed had to say. The three answers are not the same answer. */
+    internal sealed interface Feed {
+        /** A release of this edition is published; its tag, normalised. */
+        data class Version(val latest: String) : Feed
+
+        /** The repository answered and carries no release yet. GitHub says 404 for that. */
+        data object Empty : Feed
+
+        /** Nothing answered, or the answer was not one we understand. */
+        data object Unreachable : Feed
     }
 
     private val _state = MutableStateFlow<State?>(null)
@@ -71,7 +92,12 @@ object UpdateCheck {
     fun load(context: Context): State {
         _state.value?.let { return it }
         val p = prefs(context)
-        val s = State(latest = p.getString(KEY_LATEST, null), checkedAt = p.getLong(KEY_CHECKED_AT, 0L), failed = p.getBoolean(KEY_FAILED, false))
+        val s = State(
+            latest = p.getString(KEY_LATEST, null),
+            checkedAt = p.getLong(KEY_CHECKED_AT, 0L),
+            failed = p.getBoolean(KEY_FAILED, false),
+            noRelease = p.getBoolean(KEY_NO_RELEASE, false),
+        )
         _state.value = s
         return s
     }
@@ -93,47 +119,66 @@ object UpdateCheck {
         _state.value = load(app).copy(checking = true)
         scope.launch {
             try {
-                val latest = fetchLatest()
+                val feed = fetchLatest()
                 val now = System.currentTimeMillis()
                 val p = prefs(app)
                 val kept = p.getString(KEY_LATEST, null)
+                val latest = (feed as? Feed.Version)?.latest ?: kept
+                val failed = feed is Feed.Unreachable
+                val noRelease = feed is Feed.Empty
                 p.edit()
-                    .putString(KEY_LATEST, latest ?: kept)
+                    .putString(KEY_LATEST, latest)
                     .putLong(KEY_CHECKED_AT, now)
-                    .putBoolean(KEY_FAILED, latest == null)
+                    .putBoolean(KEY_FAILED, failed)
+                    .putBoolean(KEY_NO_RELEASE, noRelease)
                     .apply()
-                _state.value = State(latest = latest ?: kept, checkedAt = now, failed = latest == null)
+                _state.value = State(latest = latest, checkedAt = now, failed = failed, noRelease = noRelease)
             } finally {
                 checking.set(false)
             }
         }
     }
 
-    /** The index on nanomuse.cn, then GitHub; null when neither answered with a version. */
-    internal fun fetchLatest(): String? {
-        get(INDEX_URL)?.let { parseIndex(it) }?.let { return it }
-        return get(GITHUB_LATEST_URL)?.let { parseGitHubLatest(it) }
+    /**
+     * This edition's releases, and only those.
+     *
+     * Upstream's download index on nanomuse.cn is deliberately not read any more: every tag on
+     * it names the English app, so a version read from there would be shown as an update that
+     * can never install. The GitHub endpoint below is the one source, and it answers 404 while
+     * no release of this edition is published — an answer, not a failure, which is why
+     * [Feed.Empty] and [Feed.Unreachable] are told apart.
+     */
+    internal fun fetchLatest(): Feed {
+        val response = get(GITHUB_LATEST_URL) ?: return Feed.Unreachable
+        if (response.code == 404) return Feed.Empty
+        if (response.code !in 200..299) return Feed.Unreachable
+        val latest = parseGitHubLatest(response.body.orEmpty())
+        return if (latest != null) Feed.Version(latest) else Feed.Empty
     }
 
-    private fun get(url: String): String? = try {
+    /** One GET, with its status code kept: "404" and "no connection" are not the same answer. */
+    private class Response(val code: Int, val body: String?)
+
+    private fun get(url: String): Response? = try {
         val req = Request.Builder().url(url).get()
-            .header("User-Agent", "nanoMuse-Android/${BuildConfig.VERSION_NAME}")
+            .header("User-Agent", "nanoMuse-Arabic-Android/${BuildConfig.VERSION_NAME}")
             .header("Accept", "application/json")
             .build()
         http.newCall(req).execute().use { r ->
-            if (r.isSuccessful) {
-                r.body?.string()
-            } else {
-                AppLogger.info(TAG, "GET $url → HTTP ${r.code}")
-                null
-            }
+            Response(r.code, if (r.isSuccessful) r.body?.string() else null)
         }
     } catch (e: Exception) {
         AppLogger.info(TAG, "GET $url failed: ${e.javaClass.simpleName}")
         null
     }
 
-    /** `{"releases":[{"tag":"v0.1.34",…},…]}`, newest first → "0.1.34". */
+    /**
+     * `{"releases":[{"tag":"v0.1.34",…},…]}`, newest first → "0.1.34".
+     *
+     * nanoMuse-Arabic reads GitHub directly and has no index of its own yet, so nothing calls
+     * this today. It is kept, with its test, because the shape is the cheapest thing to serve
+     * from a mirror the day this edition wants one.
+     */
     fun parseIndex(text: String): String? {
         val o = runCatching { JSONObject(text) }.getOrNull() ?: return null
         val releases = o.optJSONArray("releases") ?: return null

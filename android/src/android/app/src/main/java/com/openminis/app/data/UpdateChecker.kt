@@ -8,6 +8,7 @@ import android.provider.Settings
 import androidx.core.content.FileProvider
 import com.openminis.app.BuildConfig
 import com.openminis.app.logging.AppLogger
+import io.github.nanomuse.update.ApkSignerIdentity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -34,13 +35,14 @@ import java.util.concurrent.TimeUnit
 object UpdateChecker {
 
     private const val TAG = "UpdateChecker"
-    private const val OWNER = "nano-muse"
-    // T133: the public repo is OpenMinis/OpenMinis (org + repo share a name).
-    // Previously pointed at OpenMinis/MinisApp, which is the private dev
-    // mirror — every API call 404'd, which we mistranslated as "no release
-    // published". The 0.1-preview release is published as a prerelease on
-    // OpenMinis/OpenMinis with a MinisApp-*.apk asset attached.
-    private const val REPO = "nanoMuse"
+    // nanoMuse-Arabic: this edition's own releases, and only those. Upstream's
+    // feed carries the English app, signed with a key this build does not share,
+    // so pointing here is what keeps an Arabic install from being offered (and
+    // then refusing) an English update. A repository with no release published
+    // yet answers 404, which the UI already reports as "No release published
+    // yet." — see scripts/rebrand.py, which writes these two constants.
+    private const val OWNER = "hoodmoshla"
+    private const val REPO = "nanoMuse-Arabic"
     private const val DOWNLOAD_FILENAME = "minis-update.apk"
     /**
      * Sub-directory of `filesDir` where we stage downloaded update APKs. We
@@ -258,7 +260,7 @@ object UpdateChecker {
     }
 
     /** Public so UI can deep-link users to manual download when GitHub is blocked. */
-    const val RELEASES_URL: String = "https://github.com/nano-muse/nanoMuse/releases"
+    const val RELEASES_URL: String = "https://github.com/hoodmoshla/nanoMuse-Arabic/releases"
 
     /** Returns (downloadUrl, sizeBytes) for the first .apk asset, or (null, 0). */
     private fun findApkAsset(assets: JSONArray?): Pair<String?, Long> {
@@ -439,6 +441,20 @@ object UpdateChecker {
     }
 
     fun installApk(context: Context, apk: File): Boolean {
+        // nanoMuse-Arabic: an APK signed with another key can never install over
+        // this app — the system refuses it with INSTALL_FAILED_UPDATE_INCOMPATIBLE
+        // and the person is left with a dialog that says nothing. Worse, a feed
+        // that answered with the official English build would be handed to the
+        // installer before anyone noticed. The signer is the one thing about an
+        // APK that cannot be faked, so it is checked here, at the single door
+        // every downloaded update goes through.
+        if (!ApkSignerIdentity.isSignedLikeInstalledApp(context, apk)) {
+            AppLogger.warning(
+                TAG,
+                "refusing ${apk.name}: it is not signed with this app's key",
+            )
+            return false
+        }
         return try {
             val authority = "${context.packageName}.fileprovider"
             val uri = FileProvider.getUriForFile(context, authority, apk)

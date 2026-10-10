@@ -59,14 +59,14 @@
     <string name="nm_naming_custom">شيء آخر…</string>
     <string name="nm_naming_placeholder">اكتب اسمًا هنا</string>
     <string-array name="nm_name_suggestions">
-        <item>Pip</item>
-        <item>Wren</item>
-        <item>Juno</item>
-        <item>Remy</item>
-        <item>Tilly</item>
-        <item>Milo</item>
-        <item>Sol</item>
-        <item>Fig</item>
+        <item>نور</item>
+        <item>ريم</item>
+        <item>جنى</item>
+        <item>سهى</item>
+        <item>سما</item>
+        <item>لمى</item>
+        <item>مها</item>
+        <item>تالا</item>
     </string-array>
 
     <!-- Home: the four tabs (Muse's shape) -->
@@ -263,7 +263,7 @@
     <string name="nm_feed_part_afternoon">بعد الظهر</string>
     <string name="nm_feed_part_evening">المساء</string>
     <string-array name="nm_weekdays">
-        <item>Monday</item><item>Tuesday</item><item>Wednesday</item><item>Thursday</item><item>Friday</item><item>Saturday</item><item>Sunday</item>
+        <item>الاثنين</item><item>الثلاثاء</item><item>الأربعاء</item><item>الخميس</item><item>الجمعة</item><item>السبت</item><item>الأحد</item>
     </string-array>
     <string name="nm_time_just_now">قبل قليل</string>
     <string name="nm_time_yesterday">أمس</string>
@@ -1066,6 +1066,9 @@
     <string name="nm_ways_devices">الأجهزة</string>
     <!-- 0.1.41 Choice: Settings → Models, the "Use it for" card, one turn on the Cloud -->
     <string name="nm_models_title">نماذج</string>
+    <string name="nm_models_cloud_off_refused">أضف مزوّدًا خاصًا بك أولًا؛ فمع إغلاق nanoMuse Cloud لن يجيب أي شيء آخر.</string>
+    <string name="nm_cloud_err_content_rejected">رفض فحص المحتوى لدى مزوّد النموذج هذا الطلب. جرّب كلمات مختلفة، أو ابدأ محادثة جديدة إن تكرّر الأمر: فقد تكون الكلمات التي يعترض عليها في جزء سابق من المحادثة.</string>
+    <string name="nm_chat_no_model">لا يوجد نموذج يمكنه الإجابة الآن. اختر واحدًا من الإعدادات › النماذج.</string>
     <string name="nm_models_intro">أي نموذج يقوم بأيّ وظيفة. يفتح كل صف منتقلاً لاختيار النموذج؛ تظهر هناك nanoMuse Cloud والمزوّدون الذين أضفتهم مع النماذج الملائمة.</string>
     <string name="nm_models_chat_title">دردشة</string>
     <string name="nm_models_chat_sub">النموذج الذي يتحدث معك.</string>

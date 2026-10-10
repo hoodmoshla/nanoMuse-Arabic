@@ -37,13 +37,25 @@ import com.openminis.app.ui.components.openExternalUrl
 import io.github.nanomuse.community.UpdateCheck
 import io.github.nanomuse.ui.home.MuseTones
 
-/** The second line under the installed version: checking, the latest, or that the check failed. */
+/**
+ * The second line under the installed version: checking, the latest, or that the check failed.
+ *
+ * nanoMuse-Arabic: "this edition has published no release yet" is its own line, not a failure.
+ * While the standalone edition has no release on GitHub, GitHub answers 404 — the honest thing
+ * to show is upstream's already-translated "No release published yet.", not "Could not check",
+ * which would send someone hunting for a network problem that does not exist.
+ */
 @Composable
 private fun statusLine(s: UpdateCheck.State): String = when {
     s.checking -> stringResource(R.string.nm_version_checking)
-    s.failed || s.latest == null -> stringResource(R.string.nm_version_failed)
-    s.newer -> stringResource(R.string.nm_version_out, s.latest.orEmpty())
-    else -> stringResource(R.string.nm_version_have, s.latest.orEmpty())
+    // Before the kept version, not after: a feed that answered "nothing published" while an
+    // earlier check had found one means the release is gone, and repeating a version that is no
+    // longer there would be the same lie in the other direction.
+    s.noRelease -> stringResource(R.string.check_update_no_release)
+    s.failed -> stringResource(R.string.nm_version_failed)
+    s.latest != null && s.newer -> stringResource(R.string.nm_version_out, s.latest)
+    s.latest != null -> stringResource(R.string.nm_version_have, s.latest)
+    else -> stringResource(R.string.nm_version_failed)
 }
 
 /** The tap: off to the download page when a newer build is out, otherwise a fresh check. */

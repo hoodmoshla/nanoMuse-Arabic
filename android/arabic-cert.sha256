@@ -1,0 +1,16 @@
+# The SHA-256 of the permanent signing certificate of the standalone Arabic edition.
+#
+# This file is empty on purpose and it is not a placeholder to fill with something plausible: an
+# empty value makes `scripts/arabic-release-apk.sh` stop and print the fingerprint of whatever
+# key it just signed with, and that is the one line to paste here once. It is public information
+# (the fingerprint ships inside every APK), so tracking it is what lets a build refuse a key we
+# did not choose.
+#
+# Print it from the key itself:
+#
+#   keytool -list -v -keystore /path/to/nanomuse-arabic-release.jks \
+#     -alias nanomuse-arabic | grep SHA256
+#
+# or let the first signed build print it, and paste only the 64 hex characters, on one line:
+#
+#   0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0

@@ -53,6 +53,9 @@ android/build/
 android/app/build/
 android/local.properties
 android/keystore.properties
+# nanoMuse-Arabic: the standalone edition's own signing key; the tracked file is
+# android/keystore-arabic.properties.example. Never commit the real one.
+android/keystore-arabic.properties
 android/.kotlin/
 android/native/build/
 *.jks

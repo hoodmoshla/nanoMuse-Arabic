@@ -605,7 +605,7 @@
     <string name="nm_welcome_feat_hands">Hands: it uses your phone</string>
     <string name="nm_welcome_feat_hands_sub">Books the train, orders the meal, looks something up in an app; you watch, and can stop it any time</string>
     <string name="nm_welcome_feat_reach">Reach: your computers, from here</string>
-    <string name="nm_welcome_feat_reach_sub">Pair a Mac, Windows or Linux machine and give it work from the phone</string>
+    <string name="nm_welcome_feat_reach_sub">Install nanoMuse Desktop on a Mac, Windows or Linux machine, sign in with the same account, and give it work from the phone</string>
     <string name="nm_welcome_notice">nanoMuse is a non-profit open-source community project: free, forever. The model comes with a free allowance paid by the developer; after that, your own key. Nothing is sold; what the relay keeps is in the privacy policy, and Settings → Data controls is yours.</string>
     <string name="nm_welcome_hands_title">Let it use your phone</string>
     <string name="nm_welcome_hands_sub">With two permissions it can open apps, tap and type for you. A capsule with each step and a Stop button stays on screen; logins, passwords and codes are always yours.</string>
@@ -692,6 +692,7 @@
     <string name="nm_cloud_err_password_weak">That password is too easy to guess.</string>
     <string name="nm_cloud_err_signup_closed">Sign-ups are paused on this relay for now. An account that already exists can still sign in.</string>
     <string name="nm_cloud_err_too_large">That message is too large for the model. Shorten it, leave out some attachments, or start a new chat.</string>
+    <string name="nm_cloud_err_content_rejected">The model provider\'s content check declined this request. Try different words, or start a new chat if it keeps happening: the words it objects to can be earlier in the conversation.</string>
     <string name="nm_cloud_err_provider_busy">The model provider is busy right now. Try again in a moment.</string>
     <string name="nm_cloud_err_provider_busy_wait">The model provider is busy right now. Try again in %1$s.</string>
     <string name="nm_cloud_err_model_not_offered">nanoMuse Cloud no longer offers that model. Pick another under Settings → nanoMuse Cloud.</string>
@@ -1065,6 +1066,8 @@
     <string name="nm_models_cloud_switch">Use nanoMuse Cloud models</string>
     <string name="nm_models_cloud_on_sub">nanoMuse Cloud is one of the sources for the rows below; what runs on it comes off your allowance.</string>
     <string name="nm_models_cloud_off_sub">Off, nothing runs on nanoMuse Cloud unless you tap \"Use nanoMuse Cloud this time\". You stay signed in for sync and your devices.</string>
+    <string name="nm_models_cloud_off_refused">Add a provider of your own first; with nanoMuse Cloud off, nothing else could answer.</string>
+    <string name="nm_chat_no_model">No model can answer right now. Choose one under Settings › Models.</string>
     <string name="nm_cloud_provider_no_delete">This provider is your nanoMuse Cloud account. Switch it off above to stop using its models; to sign out, open Settings › nanoMuse Cloud.</string>
     <string name="nm_welcome_own_key">Use your own API key instead</string>
     <string name="nm_useit_title">Use it for</string>

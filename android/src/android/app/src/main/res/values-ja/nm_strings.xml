@@ -616,7 +616,7 @@
     <string name="nm_welcome_feat_hands">ハンズ: スマートフォンを使います</string>
     <string name="nm_welcome_feat_hands_sub">列車の予約、食事の注文、アプリ内での調べもの。あなたは見守り、いつでも止められます</string>
     <string name="nm_welcome_feat_reach">リーチ: ここからコンピューターへ</string>
-    <string name="nm_welcome_feat_reach_sub">Mac、Windows、Linux のマシンをつなぎ、スマートフォンから仕事を任せます</string>
+    <string name="nm_welcome_feat_reach_sub">Mac、Windows、Linux のマシンに nanoMuse Desktop を入れて同じアカウントでサインインすれば、スマートフォンから仕事を任せられます</string>
     <string name="nm_welcome_notice">nanoMuse は非営利のオープンソースコミュニティプロジェクトです：ずっと無料です。モデルには開発者が負担する無料枠が付き、その後は自分のキーを使います。何も売りません。リレーが保持するものはプライバシーポリシーに書かれ、設定 → データ管理はあなたのものです。</string>
     <string name="nm_welcome_hands_title">スマートフォンを使わせる</string>
     <string name="nm_welcome_hands_sub">2 つの権限で、アプリを開き、タップし、入力を代わりに行えます。各ステップと停止ボタンの付いたカプセルが画面に残ります。ログイン、パスワード、コードは常にあなたのものです。</string>
@@ -705,6 +705,7 @@
     <string name="nm_cloud_err_password_weak">そのパスワードは推測されやすすぎます。</string>
     <string name="nm_cloud_err_signup_closed">このリレーでは新規登録を一時停止しています。すでにあるアカウントはそのままサインインできます。</string>
     <string name="nm_cloud_err_too_large">このメッセージはモデルには大きすぎます。短くするか、添付をいくつか外すか、新しいチャットを始めてください。</string>
+    <string name="nm_cloud_err_content_rejected">モデル提供元のコンテンツ審査がこのリクエストを通しませんでした。言い方を変えてみてください。続くようなら新しいチャットを始めてください。問題とされた言葉は会話のもっと前にあることもあります。</string>
     <string name="nm_cloud_err_provider_busy">モデル提供元が混み合っています。少ししてからもう一度お試しください。</string>
     <string name="nm_cloud_err_provider_busy_wait">モデル提供元が混み合っています。%1$s 後にもう一度お試しください。</string>
     <string name="nm_cloud_err_model_not_offered">nanoMuse Cloud ではそのモデルの提供を終了しました。設定 → nanoMuse Cloud で別のモデルを選んでください。</string>
@@ -1084,6 +1085,8 @@
     <string name="nm_models_cloud_switch">nanoMuse Cloud のモデルを使う</string>
     <string name="nm_models_cloud_on_sub">nanoMuse Cloud は下の各行の提供元のひとつで、そこで動いた分は利用枠から差し引かれます。</string>
     <string name="nm_models_cloud_off_sub">オフにすると「今回は nanoMuse Cloud を使う」をタップしない限り、nanoMuse Cloud では何も動きません。同期と端末のためにサインインは保たれます。</string>
+    <string name="nm_models_cloud_off_refused">先に自分のプロバイダーを追加してください。nanoMuse Cloud をオフにすると、ほかに答えられるものがありません。</string>
+    <string name="nm_chat_no_model">いま答えられるモデルがありません。設定 › モデルで一つ選んでください。</string>
     <string name="nm_cloud_provider_no_delete">このプロバイダーは nanoMuse Cloud のアカウントそのものです。モデルを使わないようにするには上のスイッチをオフにし、サインアウトするには「設定 › nanoMuse Cloud」を開いてください。</string>
     <string name="nm_welcome_own_key">自分の API キーを使う</string>
     <string name="nm_useit_title">何に使うか</string>

@@ -1,0 +1,202 @@
+name: Arabic release
+
+# Signs and publishes the standalone Arabic edition. Manual on purpose: a release is a decision,
+# and this one needs the Arabic signing key, which lives only in this repository's secrets. The
+# chain that leads here is in ARABIC-EDITION.md:
+#
+#   a nano-muse/nanoMuse release   → the Upstream workflow opens a sync pull request
+#   that pull request              → its own CI builds the debug APK and runs the unit tests
+#   a person merges it             → then dispatches this workflow with the next revision
+#
+# Nothing here runs on a push, and it can publish nothing unless all of this holds:
+#   * the keystore secrets are set (otherwise it stops before the build starts),
+#   * the Arabic checks and the unit tests pass (the steps are sequential: a failure ends the job),
+#   * the built APK is this edition's application id, at the version its tag will carry, not
+#     debuggable, with its native payload inside,
+#   * the APK is signed with the key pinned as ARABIC_CERT_SHA256 (or in
+#     android/arabic-cert.sha256) and not with the debug key — a run against an unpinned or
+#     different key stops after the build, printing the fingerprint, because an APK under another
+#     key can never update the copies already on people's phones.
+#
+# Two ways in:
+#   * by hand, with a revision, for a release of your own choosing;
+#   * by itself, when a sync pull request from .github/workflows/upstream.yml is merged — the
+#     revision is then read from the tags that already exist, and the publishing follows the same
+#     checks. That is the last link of the chain: upstream release → sync pull request → a person
+#     merges it → signed release → the app offers it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: "The Arabic revision of this base (1 → 1.0.1.1). Empty = the next one"
+        required: false
+        default: ""
+      publish:
+        description: "Create the tag and the GitHub release (uncheck to only build and verify)"
+        type: boolean
+        default: true
+  pull_request:
+    types: [closed]
+    branches: ["codex/arabic-standalone-phase2"]
+
+concurrency:
+  group: arabic-release
+  cancel-in-progress: false
+
+# The least that can create a tag and a release. The keystore is a secret, never a permission.
+permissions:
+  contents: write
+
+env:
+  NDK_VERSION: 27.2.12479018
+  # The branch this edition is built from. The checkout below names it instead of taking whatever
+  # branch was dispatched: the Actions page remembers the last one somebody picked, and a run
+  # started from `main` would otherwise build that tree, find no scripts/arabic-release-apk.sh and
+  # stop — or worse, find an older one.
+  ARABIC_BRANCH: codex/arabic-standalone-phase2
+
+jobs:
+  release:
+    name: build · verify · publish
+    # By hand always; by itself only when the merged pull request came from the sync branch, so a
+    # documentation change to this branch does not publish an app.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.merged == true &&
+       startsWith(github.event.pull_request.head.ref, 'upstream/'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The Arabic branch's tree for a dispatch; the merge commit for the run this workflow
+          # starts on its own when a sync pull request is merged, where that exact commit is what
+          # is being released.
+          ref: ${{ github.event_name == 'pull_request' && github.sha || env.ARABIC_BRANCH }}
+          submodules: recursive # android/deps/proot, the sandbox inside the APK
+          fetch-depth: 0 # the tag is created from this checkout and points at it
+
+      # The branch named above is the edition's; if it is ever stale the run should say so in the
+      # first seconds and name the variable, not fail inside Gradle twenty minutes later.
+      - name: The branch that carries this edition
+        run: |
+          set -euo pipefail
+          if [ ! -f scripts/arabic-release-apk.sh ]; then
+            echo "::error::this checkout has no scripts/arabic-release-apk.sh"
+            echo "ARABIC_BRANCH is '${ARABIC_BRANCH:-unset}' — point it at the branch that carries"
+            echo "the Arabic edition (its own ARABIC_BRANCH in this file, or main once it lives there)."
+            exit 1
+          fi
+          echo "building ${GITHUB_REF_NAME} from ARABIC_BRANCH=${ARABIC_BRANCH:-unset}"
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: actions/setup-go@v7
+        with:
+          # gomobile wants the current Go; GOTOOLCHAIN=auto lets it fetch one when it asks
+          go-version: "1.26"
+          cache-dependency-path: android/deps/rclone-mobile/go.sum
+
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platforms;android-36 build-tools;35.0.0 cmake;3.22.1 ndk;${{ env.NDK_VERSION }}
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      # The key is written here and nowhere else: a base64 blob in a secret, a file under
+      # $RUNNER_TEMP that the runner throws away, and a properties file the build reads. No
+      # secret is ever echoed; the one that could reach a log line is masked first.
+      #
+      # Two secrets are enough. PKCS12 keeps a single password for the store and the key, and the
+      # alias is the one the setup command in ARABIC-EDITION.md uses; ARABIC_KEY_ALIAS and
+      # ARABIC_KEY_PASSWORD exist only for a key made another way.
+      - name: The Arabic signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.ARABIC_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ARABIC_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ARABIC_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ARABIC_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=""
+          [ -n "${KEYSTORE_B64:-}" ] || missing="$missing ARABIC_KEYSTORE_BASE64"
+          [ -n "${STORE_PASSWORD:-}" ] || missing="$missing ARABIC_KEYSTORE_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error::the signing key of this edition is not configured:$missing"
+            echo "ARABIC-EDITION.md has the one-time setup: create the key, then"
+            echo "  base64 -w0 nanomuse-arabic-release.jks | gh secret set ARABIC_KEYSTORE_BASE64"
+            echo "  gh secret set ARABIC_KEYSTORE_PASSWORD"
+            echo "Until that is done no signed APK can exist, and a debug-signed one is not a release."
+            exit 1
+          fi
+          alias="${KEY_ALIAS:-nanomuse-arabic}"
+          key_password="${KEY_PASSWORD:-$STORE_PASSWORD}"
+          echo "::add-mask::$STORE_PASSWORD"
+          echo "::add-mask::$key_password"
+          umask 077
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/nanomuse-arabic-release.jks"
+          printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$RUNNER_TEMP/nanomuse-arabic-release.jks" "$STORE_PASSWORD" "$alias" "$key_password" \
+            > android/keystore-arabic.properties
+          entries="$(keytool -list -keystore "$RUNNER_TEMP/nanomuse-arabic-release.jks" \
+            -storepass "$STORE_PASSWORD" -alias "$alias" 2>/dev/null | grep -c 'PrivateKeyEntry' || true)"
+          [ "${entries:-0}" -ge 1 ] || {
+            echo "::error::the keystore has no private key under the alias '$alias'"
+            echo "Set ARABIC_KEY_ALIAS if the key was created with another alias."
+            exit 1
+          }
+          echo "the key is in place: alias $alias, one private key entry"
+
+      # One invocation for both modes: the script owns the version arithmetic, the checks, the
+      # build, the signature pin and the release. With no revision it takes the next one from the
+      # tags, which is what makes the merge-triggered run need no input at all.
+      - name: Build, verify and publish
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ARABIC_CERT_SHA256: ${{ vars.ARABIC_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ -n "${{ inputs.revision }}" ]; then args+=(--revision "${{ inputs.revision }}"); fi
+          publish="${{ github.event_name == 'pull_request' || inputs.publish == 'true' }}"
+          if [ "$publish" = "true" ]; then args+=(--publish); fi
+          echo "running: scripts/arabic-release-apk.sh ${args[*]:-(defaults)}"
+          bash scripts/arabic-release-apk.sh "${args[@]}"
+
+      # Kept whether or not it was published: a build that failed the pin, or a verify-only run,
+      # is exactly when someone wants the artifact in hand.
+      - name: Keep the APK and its checksum
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nanoMuse-Arabic-release-apk
+          path: dist/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: What this run did
+        if: always()
+        run: |
+          {
+            echo "### nanoMuse-Arabic"
+            echo
+            if [ -n "${{ steps.release.outputs.version }}" ]; then
+              echo "- built \`${{ steps.release.outputs.version }}\` (versionCode ${{ steps.release.outputs.version_code }})"
+              echo "- signature checked against the pinned certificate: \`${{ steps.release.outputs.cert }}\`"
+              echo "- APK: \`$(basename "${{ steps.release.outputs.apk }}")\` — $(du -h "${{ steps.release.outputs.apk }}" | cut -f1)"
+              if [ "${{ inputs.publish }}" = "true" ]; then
+                echo "- published as [${{ steps.release.outputs.tag }}](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.release.outputs.tag }}), marked Latest, so the app's Version row finds it"
+              else
+                echo "- not published: this run only built and verified"
+              fi
+            else
+              echo "Nothing was published. The job log above says where it stopped; the step before"
+              echo "the build names a missing secret, and the build itself prints the fingerprint"
+              echo "when the key is not the pinned one."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

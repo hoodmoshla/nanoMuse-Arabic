@@ -619,7 +619,7 @@
     <string name="nm_welcome_feat_hands">Mains : il utilise votre téléphone</string>
     <string name="nm_welcome_feat_hands_sub">Réserve le train, commande le repas, cherche quelque chose dans une app ; vous regardez, et pouvez l’arrêter à tout moment</string>
     <string name="nm_welcome_feat_reach">Portée : vos ordinateurs, d’ici</string>
-    <string name="nm_welcome_feat_reach_sub">Associez un Mac, un PC Windows ou Linux et donnez-lui du travail depuis le téléphone</string>
+    <string name="nm_welcome_feat_reach_sub">Installez nanoMuse Desktop sur un Mac, un PC Windows ou Linux, connectez-vous avec le même compte et donnez-lui du travail depuis le téléphone</string>
     <string name="nm_welcome_notice">nanoMuse est un projet communautaire open source sans but lucratif : gratuit, pour toujours. Le modèle vient avec un crédit gratuit payé par le développeur ; ensuite, votre propre clé. Rien n’est vendu ; ce que le relais conserve est dans la politique de confidentialité, et Réglages → Contrôle des données vous appartient.</string>
     <string name="nm_welcome_hands_title">Laissez-le utiliser votre téléphone</string>
     <string name="nm_welcome_hands_sub">Avec deux permissions, il peut ouvrir des apps, toucher et saisir pour vous. Une capsule avec chaque étape et un bouton Stop reste à l’écran ; les connexions, mots de passe et codes restent toujours à vous.</string>
@@ -708,6 +708,7 @@
     <string name="nm_cloud_err_password_weak">Ce mot de passe est trop facile à deviner.</string>
     <string name="nm_cloud_err_signup_closed">Les inscriptions sont suspendues sur ce relais pour le moment. Un compte déjà créé peut toujours se connecter.</string>
     <string name="nm_cloud_err_too_large">Ce message est trop volumineux pour le modèle. Raccourcissez-le, retirez quelques pièces jointes ou commencez une nouvelle discussion.</string>
+    <string name="nm_cloud_err_content_rejected">Le contrôle de contenu du fournisseur du modèle a refusé cette demande. Essayez d\'autres mots ou, si cela se répète, ouvrez une nouvelle discussion : les mots en cause peuvent se trouver plus haut dans la conversation.</string>
     <string name="nm_cloud_err_provider_busy">Le fournisseur du modèle est occupé en ce moment. Réessayez dans un instant.</string>
     <string name="nm_cloud_err_provider_busy_wait">Le fournisseur du modèle est occupé en ce moment. Réessayez dans %1$s.</string>
     <string name="nm_cloud_err_model_not_offered">nanoMuse Cloud ne propose plus ce modèle. Choisissez-en un autre dans Réglages → nanoMuse Cloud.</string>
@@ -1088,6 +1089,8 @@
     <string name="nm_models_cloud_switch">Utiliser les modèles nanoMuse Cloud</string>
     <string name="nm_models_cloud_on_sub">nanoMuse Cloud est l’une des sources des lignes ci-dessous ; ce qui y tourne est décompté de votre quota.</string>
     <string name="nm_models_cloud_off_sub">Désactivé : rien ne tourne sur nanoMuse Cloud sauf si vous touchez \"Utiliser nanoMuse Cloud cette fois\". Vous restez connecté pour la synchronisation et vos appareils.</string>
+    <string name="nm_models_cloud_off_refused">Ajoutez d’abord un fournisseur à vous ; nanoMuse Cloud désactivé, rien d’autre ne pourrait répondre.</string>
+    <string name="nm_chat_no_model">Aucun modèle ne peut répondre pour le moment. Choisissez-en un dans Réglages › Modèles.</string>
     <string name="nm_cloud_provider_no_delete">Ce fournisseur est votre compte nanoMuse Cloud. Désactivez-le ci-dessus pour ne plus utiliser ses modèles ; pour vous déconnecter, ouvrez Réglages › nanoMuse Cloud.</string>
     <string name="nm_welcome_own_key">Utiliser plutôt ma propre clé d’API</string>
     <string name="nm_useit_title">L’utiliser pour</string>

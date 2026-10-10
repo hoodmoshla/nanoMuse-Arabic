@@ -123,6 +123,47 @@ def test_the_startup_watchdog_writes_where_every_thread_is(capsys):
     assert "still not serving" not in capsys.readouterr().err
 
 
+def test_a_taken_port_is_named_before_the_service_starts():
+    """A second ``nanomuse serve`` on a busy port says who holds it, instead of announcing
+    itself as ready and dying on the bind: another nanoMuse by its /api/health, anything
+    else as another program; a free port is None."""
+    import http.server
+    import socket
+
+    from nanomuse.server import port_taken
+
+    with socket.socket() as free:
+        free.bind(("127.0.0.1", 0))
+        free_port = free.getsockname()[1]
+    assert port_taken("127.0.0.1", free_port) is None
+
+    class Health(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802 - the handler's name
+            body = json.dumps({"ok": True, "version": "9.9.9", "auth": True}).encode()
+            self.send_response(200 if self.path == "/api/health" else 404)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args: Any) -> None:
+            pass
+
+    ours = http.server.HTTPServer(("127.0.0.1", 0), Health)
+    threading.Thread(target=ours.serve_forever, daemon=True).start()
+    try:
+        # "0.0.0.0" is probed on the loopback, the address a person's browser would use
+        assert port_taken("0.0.0.0", ours.server_address[1]) == "nanoMuse 9.9.9"
+    finally:
+        ours.shutdown()
+        ours.server_close()
+
+    with socket.socket() as other:
+        other.bind(("127.0.0.1", 0))
+        other.listen(1)
+        assert port_taken("127.0.0.1", other.getsockname()[1]) == "another program"
+
+
 # ----------------------------------------------------------------------------- chat
 def test_send_message_runs_agent_and_records_timeline(server):
     client, _, llm = server
@@ -334,6 +375,31 @@ def test_feed_posts_written_for_the_user(server):
     ]
 
 
+def test_feed_is_written_in_the_language_of_the_persons_screens(server):
+    """With the reply language on `auto`, a batch follows the language the main chat last
+    heard from a client; before any message, the language Start was pressed in; a language
+    set under Settings wins over both. The first batch is written the moment the setup ends,
+    when the person has not said a word yet, so the context alone cannot carry it."""
+    client, service, llm = server
+    client.put("/api/feed/instructions", json={"instructions": "Short."})
+    assert "the same language as the context" in service.feed_language()
+
+    client.post("/api/firstrun/start", json={"lang": "zh"})
+    assert service.feed_language() == "Chinese (Simplified)"
+    llm.script.append(LLMResponse(content='[{"title": "第一天", "body": "一个小计划。"}]'))
+    client.post("/api/feed/posts/refresh")
+    assert (
+        "Write in the user's language (Chinese (Simplified))"
+        in llm.calls[-1]["messages"][-1].content
+    )
+
+    service.threads["main"].agent.ui_language = "en-US"
+    assert service.feed_language() == "English"
+
+    client.put("/api/settings", json={"language": "French"})
+    assert service.feed_language() == "French"
+
+
 def test_ask_user_question_is_answered_by_next_message(server):
     client, _, llm = server
     llm.script.extend(
@@ -422,6 +488,130 @@ def test_send_carries_the_clients_language(server):
         client.post("/api/threads/main/send", json={"text": "x", "language": "x" * 30}).status_code
         == 422
     )
+
+
+def test_use_cloud_this_time_runs_one_turn_on_the_account(server, settings: Settings, monkeypatch):
+    """`via: "cloud"` (the own-key contract, section 4): one turn on the relay's recommended
+    chat model under the Cloud key, the configured model back for the next; `[llm]`, the
+    Cloud switch and the thread stay as they were. Signed out it is a 401."""
+    from nanomuse.cloud import CLOUD_KEY
+    from nanomuse.server import service as service_module
+
+    client, service, llm = server
+    settings.cloud.models = False  # the explicit retry is what spends while the models are off
+    # signed out: refused with one sentence, nothing queued
+    r = client.post("/api/threads/main/send", json={"text": "again", "via": "cloud"})
+    assert r.status_code == 401 and r.headers["x-nanomuse-code"] == "signed_out"
+    assert r.json()["detail"] == "Sign in to nanoMuse Cloud first."
+    assert events_of(client) == []
+    # signed in: the one-turn client is built for the relay with the account's key
+    service.app.vault.set(CLOUD_KEY, "cloud-key-for-the-test")
+    service.hub.chat_models = ["relay-chat-model", "other"]
+    cloud_llm = MockLLM([LLMResponse(content="from the account")])
+    built: list[Any] = []
+
+    def fake_create_llm(merged, data_dir=None):  # noqa: ANN001
+        built.append(merged)
+        return cloud_llm
+
+    monkeypatch.setattr(service_module, "create_llm", fake_create_llm)
+    before = (settings.llm.model, settings.llm.base_url, settings.llm.api_key)
+    r = client.post("/api/threads/main/send", json={"text": "again", "via": "cloud"})
+    assert r.status_code == 200 and r.json()["event"]["model_used"] == "relay-chat-model"
+    wait_idle(service)
+    assert len(built) == 1
+    assert built[0].model == "relay-chat-model"
+    assert built[0].api_key == "cloud-key-for-the-test"
+    assert built[0].base_url.endswith("/v1") and built[0].base_url.startswith(
+        settings.cloud.base_url
+    )
+    replies = events_of(client, kind="assistant")
+    assert replies[-1]["text"] == "from the account" and replies[-1]["model_used"] == (
+        "relay-chat-model"
+    )
+    assert len(cloud_llm.calls) == 1 and llm.calls == []
+    # nothing moved: the configured model, the Cloud switch, the thread's client
+    assert (settings.llm.model, settings.llm.base_url, settings.llm.api_key) == before
+    assert settings.cloud.models is False
+    assert service.threads["main"].agent.llm is llm
+    # the next turn is back on the own model, and says nothing about a model
+    llm.script.append(LLMResponse(content="from the own key"))
+    r = client.post("/api/threads/main/send", json={"text": "and now"})
+    assert "model_used" not in r.json()["event"]
+    wait_for(
+        lambda: [e for e in events_of(client, kind="assistant") if e["text"] == "from the own key"]
+    )
+    assert len(cloud_llm.calls) == 1 and len(llm.calls) == 1
+    assert "model_used" not in events_of(client, kind="assistant")[-1]
+    # a failure of the Cloud turn names the model too, so a client does not offer it again
+    cloud_llm.script.append(LLMResponse(content=""))
+
+    def boom(*args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+        raise RuntimeError("the relay is down for the test")
+
+    monkeypatch.setattr(cloud_llm, "ask", boom)
+    client.post("/api/threads/main/send", json={"text": "again", "via": "cloud"})
+    wait_idle(service)
+    notice = events_of(client, kind="notice")[-1]
+    assert notice["level"] == "error" and notice["model_used"] == "relay-chat-model"
+    assert service.threads["main"].agent.llm is llm
+
+
+class _GatedLLM(MockLLM):
+    """A MockLLM whose answer waits for ``gate`` (a threading.Event the test sets), so a
+    turn can be caught in flight; ``closed`` says whether ``close()`` was called."""
+
+    def __init__(self, script: list[Any], gate: threading.Event):
+        super().__init__(script)
+        self.gate = gate
+        self.closed = False
+        self.asking = False
+
+    async def ask(self, messages, tools=None, tool_choice="auto", on_delta=None, max_tokens=None):  # type: ignore[override]  # noqa: ANN001
+        self.asking = True
+        while not self.gate.is_set():
+            await asyncio.sleep(0.01)
+        return await super().ask(messages, tools, tool_choice, on_delta, max_tokens)
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+def test_a_model_switch_mid_turn_lets_the_turn_finish_on_its_client(server, monkeypatch):
+    """*Use as model* or a saved key while a turn runs (`_swap_llm`): the turn in flight
+    keeps the client it started on and ends with its reply, not "Cannot send a request, as
+    the client has been closed"; the old client is closed when that run ends, and the next
+    turn is on the new client. Idle threads move at once."""
+    client, service, _ = server
+    gate = threading.Event()
+    old = _GatedLLM([LLMResponse(content="finished on the old client")], gate)
+    service.app.llm = old
+    for t in service.threads.values():
+        t.agent.llm = old
+    new = MockLLM([LLMResponse(content="on the new client")])
+    monkeypatch.setattr(service.app, "make_llm", lambda: new)
+    # a side chat, idle, to see it move at once
+    side = client.post("/api/threads", json={"title": "side"}).json()["id"]
+    client.post("/api/threads/main/send", json={"text": "slow one"})
+    wait_for(lambda: service.threads["main"].busy and old.asking)
+    # the switch, mid-turn
+    r = client.put("/api/connections/llm", json={"model": "another-model"})
+    assert r.status_code == 200
+    assert service.app.llm is new and service.threads[side].agent.llm is new
+    assert service.threads["main"].agent.llm is old and old.closed is False
+    gate.set()
+    wait_idle(service)
+    replies = events_of(client, kind="assistant")
+    assert replies[-1]["text"] == "finished on the old client"
+    assert [e for e in events_of(client, kind="notice") if e.get("level") == "error"] == []
+    # the run ended: the main chat is on the new client and the old one is closed
+    assert service.threads["main"].agent.llm is new
+    wait_for(lambda: old.closed)
+    client.post("/api/threads/main/send", json={"text": "next"})
+    wait_for(
+        lambda: [e for e in events_of(client, kind="assistant") if e["text"] == "on the new client"]
+    )
+    assert len(old.calls) == 1 and len(new.calls) == 1
 
 
 def test_stream_that_was_not_a_reply_is_discarded(server):
@@ -981,6 +1171,23 @@ def test_connections_model_key_goes_to_the_vault(server, settings: Settings):
     service.app.llm.script.append(LLMResponse(content="OK"))
     result = client.post("/api/connections/llm/test").json()
     assert result["ok"] is True and result["reply"] == "OK"
+    # a failed test says what a chat turn would say for that error, the provider's own
+    # words one tap away; not "AuthenticationError: Error code: 401 - {...}" in the person's face
+    import httpx
+    import openai
+
+    def refused(_: object) -> LLMResponse:
+        raise openai.AuthenticationError(
+            "Incorrect API key provided",
+            response=httpx.Response(401, request=httpx.Request("POST", "https://x/v1")),
+            body=None,
+        )
+
+    service.app.llm.script.append(refused)
+    result = client.post("/api/connections/llm/test").json()
+    assert result["ok"] is False and result["code"] == "key"
+    assert result["error"] == "The model provider refused the API key. Check it under Connections."
+    assert result["detail"].startswith("AuthenticationError: ")
 
     r = client.put(
         "/api/connections/llm",

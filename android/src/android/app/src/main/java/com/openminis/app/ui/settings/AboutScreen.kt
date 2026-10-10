@@ -99,7 +99,9 @@ fun AboutScreen(onBack: () -> Unit) {
                 // LocalInAppBrowserLauncher ambient defaults to a no-op when
                 // no InAppBrowserHost is in the tree above this screen — and
                 // nothing wraps Settings, so the row used to be a dead tap.
-                onClick = { openExternalUrl(context, "https://github.com/nano-muse/nanoMuse") },
+                // nanoMuse-Arabic: this row says where this app's source lives, so it
+                // points at the standalone edition's repository, not upstream's.
+                onClick = { openExternalUrl(context, "https://github.com/hoodmoshla/nanoMuse-Arabic") },
                 trailing = { ExternalLinkIcon() },
                 showDivider = false,
             )
@@ -113,7 +115,9 @@ fun AboutScreen(onBack: () -> Unit) {
                 iconColor = tileBlue,
                 title = stringResource(R.string.nm_about_license),
                 subtitle = "GPL-3.0-or-later",
-                onClick = { openExternalUrl(context, "https://github.com/nano-muse/nanoMuse/blob/main/LICENSE") },
+                // nanoMuse-Arabic: GPL-3.0 asks a build to offer ITS OWN source; this
+                // edition's repository carries upstream's history as well.
+                onClick = { openExternalUrl(context, "https://github.com/hoodmoshla/nanoMuse-Arabic/blob/main/LICENSE") },
                 trailing = { ExternalLinkIcon() },
                 minHeight = 72.dp,
             )

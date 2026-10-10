@@ -1,0 +1,253 @@
+name: Upstream
+
+# nanoMuse-Arabic follows nano-muse/nanoMuse. Both jobs here only LOOK and propose; neither
+# merges into the Arabic branch, and neither touches the upstream repository.
+#
+#   gap   — weekly, and on demand: how far behind we are, which strings upstream added that
+#           Arabic will owe, whether upstream has meanwhile shipped an Arabic locale of its own.
+#           It writes the report into the run summary, keeps it as an artifact, and opens one
+#           issue while there is something to do.
+#   sync  — when upstream publishes a RELEASE we do not have yet: fetch that tag, merge it into a
+#           branch of its own, list the conflicts and the files that touch this edition's
+#           identity, and open a pull request for a person to review.
+#
+# The pull request is where the build happens: `android.yml` runs on it, builds the debug APK and
+# runs the unit tests, including `ArabicStringsParityTest` and `NmStringsParityTest`. A merge
+# that brought new strings and no Arabic for them fails there on purpose, so nobody has to
+# remember to look.
+#
+# There is no `pull_request_target`, no write to contents outside the sync branch, no push to
+# upstream and no release step anywhere in this file.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays, 06:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: upstream-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # The branch the Arabic edition lives on, and the base of every sync pull request. Change it
+  # here when that work moves.
+  ARABIC_BRANCH: codex/arabic-standalone-phase2
+  UPSTREAM: nano-muse/nanoMuse
+
+jobs:
+  gap:
+    name: how far behind upstream
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    outputs:
+      behind: ${{ steps.gap.outputs.behind }}
+      release: ${{ steps.gap.outputs.release }}
+      new_release: ${{ steps.gap.outputs.new_release }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Named rather than left to the default branch: this job reads scripts/upstream-gap.py
+          # and the Arabic resources, which are on the Arabic branch and not on a plain main.
+          ref: ${{ env.ARABIC_BRANCH }}
+          fetch-depth: 0
+
+      # Only the commits and trees, no blobs: the report reads a handful of files through
+      # `git show`, and a blobless fetch of a monorepo this size takes seconds instead of minutes.
+      - name: Fetch upstream
+        run: |
+          git remote add upstream "https://github.com/$UPSTREAM"
+          git fetch --no-tags --filter=blob:none upstream main
+
+      - name: The gap
+        id: gap
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -o pipefail
+          python3 scripts/upstream-gap.py --theirs upstream/main --out upstream-gap.md
+          cat upstream-gap.md >> "$GITHUB_STEP_SUMMARY"
+          echo "behind=$(git rev-list --count HEAD..upstream/main)" >> "$GITHUB_OUTPUT"
+
+          # The release channel the app's own update check never reads, and the one this fork
+          # syncs to: a release is a promise, a commit on main is not.
+          release="$(gh api "repos/$UPSTREAM/releases/latest" --jq .tag_name 2>/dev/null || true)"
+          if [ -z "$release" ]; then
+            # A rate-limited or unreachable API must not take the weekly job down with it; the
+            # tags are on the remote regardless, and upstream tags every release.
+            release="$(git ls-remote --tags --refs upstream \
+              | sed 's#.*refs/tags/##' | grep -E '^v[0-9]' | sort -V | tail -1)"
+            echo "no answer from the API; the newest tag is $release"
+          fi
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+          if git fetch --no-tags --filter=blob:none upstream "refs/tags/$release:refs/tags/$release" 2>/dev/null \
+             && git merge-base --is-ancestor "$release" HEAD; then
+            echo "new_release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new_release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: upstream-gap
+          path: upstream-gap.md
+          retention-days: 30
+          if-no-files-found: error
+
+      # One issue, not one per run: the title carries the number so a change in the gap opens a
+      # new one, and an open issue on the current number is left alone.
+      - name: Open an issue while there is a merge to review
+        if: steps.gap.outputs.behind != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          title="Upstream is ${{ steps.gap.outputs.behind }} commits ahead"
+          if gh issue list --state open --search "\"$title\" in:title" --json title --jq '.[].title' | grep -Fxq "$title"; then
+            echo "already open: $title"
+            exit 0
+          fi
+          {
+            echo "nano-muse/nanoMuse is **${{ steps.gap.outputs.behind }} commit(s) ahead** of this branch."
+            echo
+            echo "The full report is on the [run summary](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) and in the \`upstream-gap\` artifact."
+            echo
+            cat upstream-gap.md
+          } > issue.md
+          gh issue create --title "$title" --body-file issue.md
+
+  # A release, not a commit: this is the only thing that opens a pull request on its own.
+  sync:
+    name: sync upstream release
+    needs: gap
+    if: needs.gap.outputs.new_release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write # the sync branch, and nothing else
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.ARABIC_BRANCH }}
+          fetch-depth: 0
+
+      - name: Fetch the release
+        run: |
+          git remote add upstream "https://github.com/$UPSTREAM"
+          git fetch --no-tags --filter=blob:none upstream "refs/tags/${{ needs.gap.outputs.release }}:refs/tags/${{ needs.gap.outputs.release }}"
+
+      - name: Merge it into a branch of its own
+        id: merge
+        run: |
+          set -euo pipefail
+          base="${{ needs.gap.outputs.release }}"
+          branch="upstream/$base"
+          # A branch for this tag already there means the pull request from an earlier run is
+          # still waiting on a person. Nothing to prepare, and nothing to force: the steps below
+          # are skipped because this output is neither 'false' nor 'true'.
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            echo "conflicts=skip" >> "$GITHUB_OUTPUT"
+            echo "a branch for $base is already on the remote; review its pull request"
+            exit 0
+          fi
+          git switch -c "$branch"
+          if git -c user.name=nanoMuse-Arabic -c user.email=noreply@github.com \
+               merge --no-commit --no-ff "$base"; then
+            echo "conflicts=false" >> "$GITHUB_OUTPUT"
+            git status --short > merge-status.txt
+          else
+            echo "conflicts=true" >> "$GITHUB_OUTPUT"
+            git diff --name-only --diff-filter=U | tee conflicts.txt
+            git merge --abort
+          fi
+
+      # Our own files, the ones a merge must not quietly drop. Named rather than looked for: a
+      # rename upstream would be caught by the tests, a lost line would not.
+      - name: Did the merge touch this edition's identity
+        if: steps.merge.outputs.conflicts == 'false'
+        run: |
+          set -euo pipefail
+          {
+            echo "## What the merge changes about this edition"
+            echo
+            git diff --name-only HEAD | grep -E \
+              'values-ar/|app_name|build.gradle.kts|shortcuts.xml|locales_config.xml|OwnScheme|ApkSignerIdentity|UpdateCheck|rebrand.py|ARABIC-EDITION' \
+              | sed 's/^/- touched: `/' | sed 's/$/`/' || echo "- nothing of ours: the merge is upstream's own files"
+            echo
+            echo "## The Arabic the merge owes"
+            echo
+            echo '```'
+            python3 scripts/check-arabic-resources.py || true
+            echo '```'
+          } > review.md
+          cat review.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Push the branch
+        if: steps.merge.outputs.conflicts == 'false'
+        run: |
+          set -euo pipefail
+          git add -A
+          git -c user.name=nanoMuse-Arabic -c user.email=noreply@github.com \
+            commit -s -m "Merge ${{ needs.gap.outputs.release }} into the Arabic edition
+
+          Prepared by .github/workflows/upstream.yml. The Arabic the merge owes is in the pull
+          request: new keys have to arrive here and in values-ar/ in the same commit, or
+          ArabicStringsParityTest fails and the Arabic app falls back to English on that screen."
+          git push -u origin "upstream/${{ needs.gap.outputs.release }}"
+
+      - name: Open the pull request
+        if: steps.merge.outputs.conflicts == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          head="upstream/${{ needs.gap.outputs.release }}"
+          title="Merge ${{ needs.gap.outputs.release }} into the Arabic edition"
+          if [ -n "$(gh pr list --head "$head" --state open --json number --jq '.[].number')" ]; then
+            echo "a pull request for $head is already open"
+            exit 0
+          fi
+          {
+            echo "Prepared by \`.github/workflows/upstream.yml\`; nothing is merged on its own."
+            echo
+            echo "**Before merging**, add the Arabic of every string this merge brought, in the same"
+            echo "commit: \`ArabicStringsParityTest\` and \`scripts/check-arabic-resources.py\` both"
+            echo "refuse a tree where they disagree, and that failure is the point."
+            echo
+            cat review.md
+            echo
+            echo "The CI on this pull request builds the debug APK and runs the unit tests."
+          } > pr.md
+          gh pr create --base "$ARABIC_BRANCH" --head "$head" --title "$title" --body-file pr.md
+
+      - name: Report a merge a robot cannot take
+        if: steps.merge.outputs.conflicts == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          title="Upstream ${{ needs.gap.outputs.release }} conflicts with the Arabic edition"
+          if gh issue list --state open --search "\"$title\" in:title" --json title --jq '.[].title' | grep -Fxq "$title"; then
+            echo "already open: $title"
+            exit 0
+          fi
+          {
+            echo "The merge of \`${{ needs.gap.outputs.release }}\` stops on these files, and a"
+            echo "conflict is a decision about this edition's own lines rather than a conflict"
+            echo "resolution a robot can take:"
+            echo
+            echo '```'
+            cat conflicts.txt
+            echo '```'
+            echo
+            echo "Do it on a branch: \`git switch -c upstream/${{ needs.gap.outputs.release }}\`,"
+            echo "\`git merge ${{ needs.gap.outputs.release }}\`, resolve, then"
+            echo "\`python3 scripts/check-arabic-resources.py\` and open the pull request by hand."
+          } > issue.md
+          gh issue create --title "$title" --body-file issue.md

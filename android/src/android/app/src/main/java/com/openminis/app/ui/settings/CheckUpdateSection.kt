@@ -42,6 +42,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.openminis.app.BuildConfig
 import com.openminis.app.R
+import com.openminis.app.data.PendingUpdateStore
 import com.openminis.app.data.UpdateChecker
 import kotlinx.coroutines.launch
 import com.openminis.app.ui.components.MinisButton
@@ -104,6 +105,12 @@ fun CheckUpdateSection() {
                 update = null
                 downloadProgress = null
                 downloadError = null
+            } else {
+                // nanoMuse-Arabic: installApk refuses an APK that is not signed
+                // with this app's key, and the archive outlives the pending
+                // record — clearing it stops the same refusal on every resume.
+                PendingUpdateStore.clearPending(context)
+                downloadError = context.getString(R.string.check_update_install_hint)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)

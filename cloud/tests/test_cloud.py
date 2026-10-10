@@ -80,6 +80,18 @@ def fake_upstream() -> FastAPI:
             return JSONResponse(status_code=500, content={"error": {"message": "upstream exploded"}})
         if body.get("model") in up.state.retired:
             return JSONResponse(status_code=400, content={"error": {"message": "Model not exist.", "code": "invalid_parameter_error"}})
+        if any("forbidden words" in str(m.get("content")) for m in body.get("messages") or [] if isinstance(m, dict)):
+            # Bailian's content check saying no, in its OpenAI-compatible spelling
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": {
+                        "message": "<400> InternalError.Algo.DataInspectionFailed: Input text data may contain inappropriate content.",
+                        "code": "data_inspection_failed",
+                        "type": "invalid_request_error",
+                    }
+                },
+            )
         if body.get("reasoning_effort") not in (None, "none") and body.get("enable_thinking") is False:
             # Model Studio's actual refusal of an app's thinking level next to the relay's old default
             return JSONResponse(
@@ -155,6 +167,7 @@ def fake_upstream() -> FastAPI:
         }
 
     up.state.image_429s = 0  # how many times the next pictures are refused with a 429 first
+    up.state.task_status = {}  # task id -> the status (or an HTTP code) to answer with, instead of running-then-done
 
     @up.post("/ds/api/v1/services/aigc/multimodal-generation/generation")
     async def draw(request: Request):
@@ -189,8 +202,11 @@ def fake_upstream() -> FastAPI:
     @up.get("/ds/api/v1/tasks/{task_id}")
     async def task(task_id: str, request: Request):
         up.state.requests.append(("task", dict(request.headers), task_id))
+        fixed = up.state.task_status.get(task_id)
+        if isinstance(fixed, int):
+            return JSONResponse(status_code=fixed, content={"code": "InvalidParameter", "message": "task not exist"})
         polls = sum(1 for r in up.state.requests if r[0] == "task" and r[2] == task_id)
-        status = "RUNNING" if polls == 1 else "SUCCEEDED"
+        status = fixed or ("RUNNING" if polls == 1 else "SUCCEEDED")
         return {"output": {"task_id": task_id, "task_status": status, "video_url": "http://upstream/clip.mp4"}}
 
     @up.get("/ds/api/v1/uploads")
@@ -579,6 +595,29 @@ async def test_unconfigured_upstream_answers_503(stack):
     )
     assert r.status_code == 503 and r.json()["error"]["code"] == "upstream_unconfigured"
     assert (await client.get("/healthz")).json()["ok"] is True
+
+
+async def test_unconfigured_upstream_holds_nothing(stack):
+    # Before 0.23.1 the chat and video routes reserved the turn's price and only then found
+    # there was no key, so the hold was never settled: after max_in_flight such turns the
+    # account was refused with too_many_in_flight until the holds timed out.
+    app, client, sender, up, cloud = stack
+    object.__setattr__(app.state.settings, "upstream_key", "")
+    data = await sign_up(client, sender)
+    headers = {"Authorization": f"Bearer {data['api_key']}"}
+    account_id = cloud.authenticate(data["api_key"]).account_id
+    for _ in range(cloud.s.max_in_flight + 1):
+        r = await client.post("/v1/chat/completions", headers=headers, json={"model": "qwen3.8-27b", "messages": []})
+        assert r.status_code == 503 and r.json()["error"]["code"] == "upstream_unconfigured"
+        r = await client.post(
+            "/api/v1/services/aigc/video-generation/video-synthesis",
+            headers=headers,
+            json={"model": "wan2.2-i2v-flash", "input": {"prompt": "a wave"}, "parameters": {"duration": 5}},
+        )
+        assert r.status_code == 503 and r.json()["error"]["code"] == "upstream_unconfigured"
+    assert cloud.in_flight.count(account_id) == 0
+    health = (await client.get("/v1/admin/health", headers={"X-Admin-Token": "admin"})).json()
+    assert health["in_flight"]["requests"] == 0
 
 
 def make_stack(**overrides):
@@ -1337,6 +1376,44 @@ def test_a_content_check_refusal_is_said_plainly():
     # an ordinary 400 still passes the provider's own words through, as before
     assert relay_error_body(400, other)["error"] == {"message": "Model not exist.", "type": "upstream", "code": "upstream_400"}
     assert relay_error_body(429, other)["error"]["code"] == "upstream_busy"
+
+
+async def test_a_content_check_refusal_is_counted_apart_from_upstream_errors(stack):
+    """The provider declining a request's words says nothing about the provider: the event is
+    `content.rejected`, not `upstream.error`, the health page counts it under
+    `content_rejected`, and however many of them an hour brings, none is a problem (one long
+    conversation retried by its client brought two hundred in an hour once, and the page said
+    the provider was down). The person's own timeline still shows each one."""
+    app, client, sender, up, cloud = stack
+    admin = {"X-Admin-Token": "admin"}
+    data = await sign_up(client, sender)
+    headers = {"Authorization": f"Bearer {data['api_key']}"}
+    body = {"model": "qwen3.8-27b", "messages": [{"role": "user", "content": "some forbidden words"}]}
+    for stream in (False, True):
+        for _ in range(12):
+            r = await client.post("/v1/chat/completions", headers=headers, json={**body, "stream": stream})
+            assert r.status_code == (200 if stream else 400) and b"content_rejected" in r.content
+    health = (await client.get("/v1/admin/health", headers=admin)).json()
+    assert health["last_hour"]["content_rejected"] == 24 and health["last_hour"]["upstream_errors"] == 0
+    assert health["ok"] is True and health["problems"] == []
+    overview = (await client.get("/v1/admin/overview", headers=admin)).json()
+    assert overview["signals_today"]["content_rejected"] == 24 and overview["signals_today"]["upstream_errors"] == 0
+    series = (await client.get("/v1/admin/series?days=1", headers=admin)).json()
+    assert series["days"][-1]["content_rejected"] == 24 and series["days"][-1]["upstream_errors"] == 0
+    events = (await client.get("/v1/me/events", headers=headers)).json()["events"]
+    assert sum(1 for e in events if e["kind"] == "content.rejected") == 24
+    assert all(e["detail"].startswith("chat 400 qwen3.8-27b: ") for e in events if e["kind"] == "content.rejected")
+    assert not any(e["kind"] == "upstream.error" for e in events)
+    # a provider failing for its own reasons is still an upstream error, and twenty make a problem
+    settings = app.state.settings
+    object.__setattr__(settings, "models", settings.models + (type(settings.models[0])(id="boom", name="Boom", upstream="boom"),))
+    boom = {"model": "boom", "messages": [{"role": "user", "content": "hi"}]}
+    for _ in range(20):
+        r = await client.post("/v1/chat/completions", headers=headers, json=boom)
+        assert r.status_code == 502
+    health = (await client.get("/v1/admin/health", headers=admin)).json()
+    assert health["last_hour"]["upstream_errors"] == 20 and health["last_hour"]["content_rejected"] == 24
+    assert health["ok"] is False and health["problems"] == ["20 upstream errors in the last hour"]
 
 
 def tiny_xdb(ranges: list[tuple[str, str, str]]) -> bytes:

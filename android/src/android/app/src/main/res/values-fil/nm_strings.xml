@@ -619,7 +619,7 @@
     <string name="nm_welcome_feat_hands">Mga kamay: ginagamit nito ang telepono mo</string>
     <string name="nm_welcome_feat_hands_sub">Nagbu-book ng tren, umoorder ng pagkain, naghahanap ng isang bagay sa isang app; nanonood ka, at maaari mo itong itigil anumang oras</string>
     <string name="nm_welcome_feat_reach">Abot: ang mga computer mo, mula rito</string>
-    <string name="nm_welcome_feat_reach_sub">Ipares ang isang Mac, Windows o Linux machine at bigyan ito ng trabaho mula sa telepono</string>
+    <string name="nm_welcome_feat_reach_sub">I-install ang nanoMuse Desktop sa isang Mac, Windows o Linux machine, mag-sign in gamit ang parehong account, at bigyan ito ng trabaho mula sa telepono</string>
     <string name="nm_welcome_notice">Ang nanoMuse ay isang non-profit na open-source na proyekto ng komunidad: libre, habang-buhay. May kasamang libreng allowance ang modelo na binabayaran ng developer; pagkatapos niyon, ang sarili mong key. Walang ibinebenta; nasa patakaran sa privacy kung ano ang itinatago ng relay, at sa iyo ang Mga setting → Mga kontrol sa data.</string>
     <string name="nm_welcome_hands_title">Hayaan itong gamitin ang telepono mo</string>
     <string name="nm_welcome_hands_sub">Sa dalawang pahintulot, kaya nitong magbukas ng mga app, mag-tap at mag-type para sa iyo. Nananatili sa screen ang isang capsule na may bawat hakbang at isang button na Itigil; laging sa iyo ang mga login, password at code.</string>
@@ -708,6 +708,7 @@
     <string name="nm_cloud_err_password_weak">Masyadong madaling hulaan ang password na iyan.</string>
     <string name="nm_cloud_err_signup_closed">Naka-pause muna ang pag-sign up sa relay na ito. Puwede pa ring mag-sign in ang account na mayroon na.</string>
     <string name="nm_cloud_err_too_large">Masyadong malaki ang mensaheng iyan para sa model. Paikliin ito, alisin ang ilang attachment, o magsimula ng bagong chat.</string>
+    <string name="nm_cloud_err_content_rejected">Tinanggihan ng content check ng model provider ang kahilingang ito. Subukan ang ibang mga salita, o magsimula ng bagong chat kung paulit-ulit itong nangyayari: ang mga salitang tinutulan nito ay maaaring nasa mas maagang bahagi ng usapan.</string>
     <string name="nm_cloud_err_provider_busy">Abala ngayon ang provider ng model. Subukan muli maya-maya.</string>
     <string name="nm_cloud_err_provider_busy_wait">Abala ngayon ang provider ng model. Subukan muli pagkalipas ng %1$s.</string>
     <string name="nm_cloud_err_model_not_offered">Hindi na inaalok ng nanoMuse Cloud ang model na iyan. Pumili ng iba sa Settings → nanoMuse Cloud.</string>
@@ -1088,6 +1089,8 @@
     <string name="nm_models_cloud_switch">Gamitin ang mga modelo ng nanoMuse Cloud</string>
     <string name="nm_models_cloud_on_sub">Isa ang nanoMuse Cloud sa mga pinagmumulan ng mga row sa ibaba; ang tumatakbo dito ay ibinabawas sa iyong allowance.</string>
     <string name="nm_models_cloud_off_sub">Naka-off: walang tatakbo sa nanoMuse Cloud maliban kung i-tap mo ang \"Gamitin ang nanoMuse Cloud ngayon\". Mananatili kang naka-sign in para sa sync at sa iyong mga device.</string>
+    <string name="nm_models_cloud_off_refused">Magdagdag muna ng sarili mong provider; kapag naka-off ang nanoMuse Cloud, wala nang ibang makakasagot.</string>
+    <string name="nm_chat_no_model">Walang modelong makakasagot ngayon. Pumili ng isa sa Mga Setting › Mga Modelo.</string>
     <string name="nm_cloud_provider_no_delete">Ang provider na ito ay ang iyong nanoMuse Cloud account. I-off ito sa itaas para hindi na gamitin ang mga modelo nito; para mag-sign out, buksan ang Mga Setting › nanoMuse Cloud.</string>
     <string name="nm_welcome_own_key">Gamitin na lang ang sariling API key</string>
     <string name="nm_useit_title">Gamitin ito para sa</string>

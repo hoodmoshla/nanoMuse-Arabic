@@ -141,11 +141,11 @@ def generated(previous: str, target: str, prs: list[PullRequest]) -> str:
         lines += newcomers
     else:
         lines.append(
-            "* No first-time contributors in this release — yours could be the next one: "
+            "* No first-time contributors in this release; yours could be the next one: "
             f"[good first issues]({GOOD_FIRST})."
         )
     lines += ["", "## Contributors", ""]
-    lines.append(" · ".join(f"@{login}" for login in humans) if humans else "—")
+    lines.append(" · ".join(f"@{login}" for login in humans) if humans else "(none)")
     bots = sorted({pr.author for pr in prs if is_bot(pr.author)}, key=str.lower)
     if bots:
         lines.append("")
@@ -172,7 +172,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument("version", help="x.y.z — reads docs/releases/v<version>.md")
+    ap.add_argument("version", help="x.y.z; reads docs/releases/v<version>.md")
     ap.add_argument(
         "--previous", help="the previous tag (default: the newest v* tag before --target)"
     )

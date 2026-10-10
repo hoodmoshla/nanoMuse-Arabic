@@ -39,9 +39,27 @@ android {
     // android/keystore.properties exists (storeFile / storePassword / keyAlias /
     // keyPassword; git-ignored) and fall back to the debug key otherwise, so a
     // release APK can be built by anyone. One key for every version.
+    //
+    // nanoMuse-Arabic: the standalone Arabic edition is signed with a key of its
+    // own, so its releases update each other and never touch the official key.
+    // The properties file is looked up in this order, and the first one that
+    // exists wins:
+    //
+    //   1. $NM_KEYSTORE_PROPERTIES            — an absolute path (for a build
+    //                                           machine that keeps no file here)
+    //   2. android/keystore-arabic.properties — this edition's key (git-ignored)
+    //   3. android/keystore.properties        — upstream's path, left as it was
+    //
+    // None of them is ever committed; with none present the release build falls
+    // back to the debug key, which scripts/release-apk.sh refuses to publish.
+    // See ARABIC-EDITION.md for the one-time keytool command.
     signingConfigs {
-        val keystoreProperties = rootProject.file("../../keystore.properties")
-        if (keystoreProperties.isFile) {
+        val keystoreProperties = sequenceOf(
+            System.getenv("NM_KEYSTORE_PROPERTIES")?.let { file(it) },
+            rootProject.file("../../keystore-arabic.properties"),
+            rootProject.file("../../keystore.properties"),
+        ).filterNotNull().firstOrNull { it.isFile }
+        if (keystoreProperties != null) {
             val props = Properties()
             keystoreProperties.inputStream().use { props.load(it) }
             create("nanomuse") {
@@ -54,11 +72,21 @@ android {
     }
 
     defaultConfig {
-        applicationId = "io.github.nanomuse.app"
+        // nanoMuse-Arabic: the standalone Arabic edition installs BESIDE the
+        // official nanoMuse. Its own application id is what keeps the two apart
+        // for Android — separate data, separate permissions, separate updates —
+        // while the Kotlin package and the Gradle namespace stay
+        // com.openminis.app so upstream merges keep landing. Everything that
+        // derives from it (`${applicationId}.permission.ALARM`, the Shizuku and
+        // FileProvider authorities, the accessibility service id) follows this
+        // line automatically; res/xml/shortcuts.xml is the one file that has to
+        // be edited by hand, and scripts/check-arabic-resources.py fails the
+        // build when the two drift apart.
+        applicationId = "io.github.nanomuse.arabic"
         minSdk = 26
         targetSdk = 35
-        versionCode = 42
-        versionName = "0.1.41"
+        versionCode = 44
+        versionName = "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

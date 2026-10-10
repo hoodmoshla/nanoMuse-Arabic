@@ -596,7 +596,7 @@
     <string name="nm_welcome_feat_hands">Hands：替你操作手機</string>
     <string name="nm_welcome_feat_hands_sub">訂車票、點外送、在應用程式裡查東西；你全程看著，隨時可以停</string>
     <string name="nm_welcome_feat_reach">Reach：從手機使用你的電腦</string>
-    <string name="nm_welcome_feat_reach_sub">配對一台 Mac、Windows 或 Linux 電腦，在手機上派工作給它</string>
+    <string name="nm_welcome_feat_reach_sub">在 Mac、Windows 或 Linux 電腦上裝好 nanoMuse 桌面版，用同一個帳號登入，就能在手機上派工作給它</string>
     <string name="nm_welcome_notice">nanoMuse 是非營利的開源社群專案，永久免費。模型自帶一份由開發者承擔的免費額度，用完換自己的 key。資料不會出售；伺服器保存什麼寫在隱私權政策裡，「設定 → 資料控制」由你決定。</string>
     <string name="nm_welcome_hands_title">讓它替你操作手機</string>
     <string name="nm_welcome_hands_sub">開啟兩項權限後，它就能替你打開應用程式、點按和輸入。螢幕上始終有顯示目前步驟和「停止」的膠囊；登入、密碼和驗證碼永遠由你自己來。</string>
@@ -683,6 +683,7 @@
     <string name="nm_cloud_err_password_weak">這個密碼太好猜了。</string>
     <string name="nm_cloud_err_signup_closed">這台中繼暫時關閉了註冊。已有的帳號仍可登入。</string>
     <string name="nm_cloud_err_too_large">這則訊息對模型來說太長了。縮短一些、去掉幾個附件，或者新開一個對話。</string>
+    <string name="nm_cloud_err_content_rejected">模型服務商的內容審核沒有放行這次請求。換個說法試試；如果反覆出現，就新開一個對話，被攔下的可能是對話裡更早的內容。</string>
     <string name="nm_cloud_err_provider_busy">模型服務商現在很忙，稍後再試。</string>
     <string name="nm_cloud_err_provider_busy_wait">模型服務商現在很忙，請在 %1$s 後再試。</string>
     <string name="nm_cloud_err_model_not_offered">nanoMuse Cloud 不再提供這個模型。到「設定 → nanoMuse Cloud」換一個。</string>
@@ -1054,6 +1055,8 @@
     <string name="nm_models_cloud_switch">使用 nanoMuse Cloud 模型</string>
     <string name="nm_models_cloud_on_sub">nanoMuse Cloud 是下面各項的來源之一，在它上面執行的內容計入你的額度。</string>
     <string name="nm_models_cloud_off_sub">關閉後，除非你點「這次改用 nanoMuse Cloud」，否則不會有任何內容在 nanoMuse Cloud 上執行。帳號保持登入，用於同步和你的裝置。</string>
+    <string name="nm_models_cloud_off_refused">先新增一個自己的服務商；關掉 nanoMuse Cloud 後沒有別的模型能回答。</string>
+    <string name="nm_chat_no_model">現在沒有能回答的模型。請在「設定 › 模型」裡選一個。</string>
     <string name="nm_cloud_provider_no_delete">這個提供商就是你的 nanoMuse Cloud 帳號。要停用它的模型，請在上面關閉開關；要登出，請開啟「設定 › nanoMuse Cloud」。</string>
     <string name="nm_welcome_own_key">改用自己的 API key</string>
     <string name="nm_useit_title">用它來做什麼</string>

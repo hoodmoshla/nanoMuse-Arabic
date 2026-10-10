@@ -616,7 +616,7 @@
     <string name="nm_welcome_feat_hands">손: 휴대전화를 직접 씁니다</string>
     <string name="nm_welcome_feat_hands_sub">기차표를 예매하고, 식사를 주문하고, 앱에서 무언가를 찾아봅니다. 지켜보다가 언제든 멈출 수 있습니다</string>
     <string name="nm_welcome_feat_reach">원격: 내 컴퓨터를 여기서</string>
-    <string name="nm_welcome_feat_reach_sub">Mac, Windows, Linux 컴퓨터를 연결하고 휴대전화에서 일을 맡기세요</string>
+    <string name="nm_welcome_feat_reach_sub">Mac, Windows, Linux 컴퓨터에 nanoMuse Desktop을 설치하고 같은 계정으로 로그인하면 휴대전화에서 일을 맡길 수 있습니다</string>
     <string name="nm_welcome_notice">nanoMuse는 비영리 오픈 소스 커뮤니티 프로젝트입니다: 영원히 무료. 모델에는 개발자가 부담하는 무료 사용량이 딸려 있고, 그다음은 내 키입니다. 아무것도 팔지 않습니다. 릴레이가 보관하는 것은 개인정보 처리방침에 있고, 설정 → 데이터 관리는 내 것입니다.</string>
     <string name="nm_welcome_hands_title">휴대전화를 쓰게 허용</string>
     <string name="nm_welcome_hands_sub">권한 두 개만 있으면 앱을 열고, 탭하고, 대신 입력할 수 있습니다. 각 단계와 중지 버튼이 있는 캡슐이 화면에 머뭅니다. 로그인, 비밀번호, 인증 코드는 항상 직접 합니다.</string>
@@ -705,6 +705,7 @@
     <string name="nm_cloud_err_password_weak">그 비밀번호는 추측하기 너무 쉽습니다.</string>
     <string name="nm_cloud_err_signup_closed">이 릴레이는 당분간 가입을 받지 않습니다. 이미 있는 계정은 그대로 로그인할 수 있습니다.</string>
     <string name="nm_cloud_err_too_large">이 메시지는 모델이 받기엔 너무 큽니다. 줄이거나, 첨부 일부를 빼거나, 새 채팅을 시작하세요.</string>
+    <string name="nm_cloud_err_content_rejected">모델 제공자의 콘텐츠 검사가 이 요청을 거부했습니다. 다른 표현으로 시도해 보세요. 계속 반복되면 새 대화를 시작하세요. 문제가 된 표현이 대화의 앞부분에 있을 수 있습니다.</string>
     <string name="nm_cloud_err_provider_busy">모델 제공자가 지금 바쁩니다. 잠시 후 다시 시도하세요.</string>
     <string name="nm_cloud_err_provider_busy_wait">모델 제공자가 지금 바쁩니다. %1$s 후에 다시 시도하세요.</string>
     <string name="nm_cloud_err_model_not_offered">nanoMuse Cloud에서 그 모델을 더 이상 제공하지 않습니다. 설정 → nanoMuse Cloud에서 다른 모델을 고르세요.</string>
@@ -1084,6 +1085,8 @@
     <string name="nm_models_cloud_switch">nanoMuse Cloud 모델 사용</string>
     <string name="nm_models_cloud_on_sub">nanoMuse Cloud는 아래 항목의 출처 중 하나이며, 여기서 실행된 내용은 사용량에서 차감됩니다.</string>
     <string name="nm_models_cloud_off_sub">끄면 \"이번에는 nanoMuse Cloud 사용\"을 누르지 않는 한 nanoMuse Cloud에서 아무것도 실행되지 않습니다. 동기화와 기기를 위해 로그인은 유지됩니다.</string>
+    <string name="nm_models_cloud_off_refused">먼저 자신의 제공자를 추가하세요. nanoMuse Cloud를 끄면 답할 수 있는 모델이 없습니다.</string>
+    <string name="nm_chat_no_model">지금 답할 수 있는 모델이 없습니다. 설정 › 모델에서 하나를 고르세요.</string>
     <string name="nm_cloud_provider_no_delete">이 제공자는 nanoMuse Cloud 계정 자체입니다. 모델 사용을 멈추려면 위 스위치를 끄고, 로그아웃하려면 설정 › nanoMuse Cloud를 여세요.</string>
     <string name="nm_welcome_own_key">내 API 키 사용</string>
     <string name="nm_useit_title">어디에 쓸지</string>

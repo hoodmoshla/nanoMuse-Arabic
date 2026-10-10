@@ -601,7 +601,7 @@
     <string name="nm_welcome_feat_hands">Hands：替你操作手机</string>
     <string name="nm_welcome_feat_hands_sub">订车票、点外卖、在应用里查东西；你全程看着，随时可以停</string>
     <string name="nm_welcome_feat_reach">Reach：从手机使用你的电脑</string>
-    <string name="nm_welcome_feat_reach_sub">配对一台 Mac、Windows 或 Linux 电脑，在手机上派活给它</string>
+    <string name="nm_welcome_feat_reach_sub">在 Mac、Windows 或 Linux 电脑上装好 nanoMuse 桌面版，用同一个账号登录，就能在手机上派活给它</string>
     <string name="nm_welcome_notice">nanoMuse 是非营利的开源社区项目，永久免费。模型自带一份由开发者承担的免费额度，用完换自己的 key。数据不会出售；服务器保存什么写在隐私政策里，「设置 → 数据控制」由你决定。</string>
     <string name="nm_welcome_hands_title">让它替你操作手机</string>
     <string name="nm_welcome_hands_sub">开启两项权限后，它就能替你打开应用、点按和输入。屏幕上始终有显示当前步骤和「停止」的胶囊；登录、密码和验证码永远由你自己来。</string>
@@ -688,6 +688,7 @@
     <string name="nm_cloud_err_password_weak">这个密码太好猜了。</string>
     <string name="nm_cloud_err_signup_closed">这台中继暂时关闭了注册。已有的账号仍可登录。</string>
     <string name="nm_cloud_err_too_large">这条消息对模型来说太长了。缩短一些、去掉几个附件，或者新开一个对话。</string>
+    <string name="nm_cloud_err_content_rejected">模型服务商的内容审核没有放行这次请求。换个说法试试；如果反复出现，就新开一个对话，被拦下的可能是对话里更早的内容。</string>
     <string name="nm_cloud_err_provider_busy">模型服务商现在很忙，稍后再试。</string>
     <string name="nm_cloud_err_provider_busy_wait">模型服务商现在很忙，请在 %1$s 后再试。</string>
     <string name="nm_cloud_err_model_not_offered">nanoMuse Cloud 不再提供这个模型。到「设置 → nanoMuse Cloud」换一个。</string>
@@ -1061,7 +1062,9 @@
     <string name="nm_models_cloud_switch">使用 nanoMuse Cloud 模型</string>
     <string name="nm_models_cloud_on_sub">nanoMuse Cloud 是下面各项的来源之一，在它上面运行的内容计入你的额度。</string>
     <string name="nm_models_cloud_off_sub">关闭后，除非你点「这次改用 nanoMuse Cloud」，否则不会有任何内容在 nanoMuse Cloud 上运行。账号保持登录，用于同步和你的设备。</string>
-    <string name="nm_cloud_provider_no_delete">这个提供商就是你的 nanoMuse Cloud 账号。要停用它的模型，请在上面关闭开关；要退出登录，请打开「设置 › nanoMuse Cloud」。</string>
+    <string name="nm_models_cloud_off_refused">先添加一个自己的服务商；关掉 nanoMuse Cloud 后没有别的模型能回答。</string>
+    <string name="nm_chat_no_model">现在没有能回答的模型。请在「设置 › 模型」里选一个。</string>
+    <string name="nm_cloud_provider_no_delete">这个服务商就是你的 nanoMuse Cloud 账号。要停用它的模型，请在上面关闭开关；要退出登录，请打开「设置 › nanoMuse Cloud」。</string>
     <string name="nm_welcome_own_key">改用自己的 API key</string>
     <string name="nm_useit_title">用它来做什么</string>
     <string name="nm_useit_body">选这把 key 负责哪些事，其余仍由 nanoMuse Cloud 负责。</string>

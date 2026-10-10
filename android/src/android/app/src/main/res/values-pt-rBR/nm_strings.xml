@@ -619,7 +619,7 @@
     <string name="nm_welcome_feat_hands">Mãos: ele usa seu celular</string>
     <string name="nm_welcome_feat_hands_sub">Reserva o trem, pede a comida, procura algo em um app; você acompanha e pode parar a qualquer momento</string>
     <string name="nm_welcome_feat_reach">Alcance: seus computadores, daqui</string>
-    <string name="nm_welcome_feat_reach_sub">Pareie um Mac, Windows ou Linux e passe trabalho a ele pelo celular</string>
+    <string name="nm_welcome_feat_reach_sub">Instale o nanoMuse Desktop em um Mac, Windows ou Linux, entre com a mesma conta e passe trabalho a ele pelo celular</string>
     <string name="nm_welcome_notice">O nanoMuse é um projeto comunitário de código aberto, sem fins lucrativos: gratuito, para sempre. O modelo vem com uma cota gratuita paga pelo desenvolvedor; depois dela, sua própria chave. Nada é vendido; o que o relay guarda está na política de privacidade, e Configurações → Controles de dados é seu.</string>
     <string name="nm_welcome_hands_title">Deixe-o usar seu celular</string>
     <string name="nm_welcome_hands_sub">Com duas permissões ele pode abrir apps, tocar e digitar por você. Uma cápsula com cada passo e um botão Parar fica na tela; logins, senhas e códigos são sempre seus.</string>
@@ -708,6 +708,7 @@
     <string name="nm_cloud_err_password_weak">Essa senha é fácil demais de adivinhar.</string>
     <string name="nm_cloud_err_signup_closed">Os cadastros estão pausados neste relay por enquanto. Uma conta que já existe continua podendo entrar.</string>
     <string name="nm_cloud_err_too_large">Essa mensagem é grande demais para o modelo. Encurte, tire alguns anexos ou comece uma conversa nova.</string>
+    <string name="nm_cloud_err_content_rejected">A verificação de conteúdo do provedor do modelo recusou esta solicitação. Tente outras palavras ou, se continuar acontecendo, comece uma nova conversa: as palavras recusadas podem estar mais acima na conversa.</string>
     <string name="nm_cloud_err_provider_busy">O provedor do modelo está ocupado agora. Tente de novo em instantes.</string>
     <string name="nm_cloud_err_provider_busy_wait">O provedor do modelo está ocupado agora. Tente de novo em %1$s.</string>
     <string name="nm_cloud_err_model_not_offered">O nanoMuse Cloud não oferece mais esse modelo. Escolha outro em Ajustes → nanoMuse Cloud.</string>
@@ -1088,6 +1089,8 @@
     <string name="nm_models_cloud_switch">Usar modelos do nanoMuse Cloud</string>
     <string name="nm_models_cloud_on_sub">O nanoMuse Cloud é uma das fontes das linhas abaixo; o que roda nele sai da sua cota.</string>
     <string name="nm_models_cloud_off_sub">Desligado: nada roda no nanoMuse Cloud a menos que você toque em \"Usar o nanoMuse Cloud desta vez\". Você continua conectado para a sincronização e seus dispositivos.</string>
+    <string name="nm_models_cloud_off_refused">Adicione primeiro um provedor seu; com o nanoMuse Cloud desligado, nada mais poderia responder.</string>
+    <string name="nm_chat_no_model">Nenhum modelo pode responder agora. Escolha um em Configurações › Modelos.</string>
     <string name="nm_cloud_provider_no_delete">Este provedor é a sua conta do nanoMuse Cloud. Desligue-o acima para parar de usar seus modelos; para sair, abra Ajustes › nanoMuse Cloud.</string>
     <string name="nm_welcome_own_key">Usar minha própria chave de API</string>
     <string name="nm_useit_title">Usar para</string>
