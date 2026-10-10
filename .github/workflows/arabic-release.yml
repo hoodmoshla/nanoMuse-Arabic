@@ -11,24 +11,34 @@ name: Arabic release
 # Nothing here runs on a push, and it can publish nothing unless all of this holds:
 #   * the keystore secrets are set (otherwise it stops before the build starts),
 #   * the Arabic checks and the unit tests pass (the steps are sequential: a failure ends the job),
-#   * the built APK is this edition's application id, at the version its tag will carry, with its
-#     native payload inside,
+#   * the built APK is this edition's application id, at the version its tag will carry, not
+#     debuggable, with its native payload inside,
 #   * the APK is signed with the key pinned as ARABIC_CERT_SHA256 (or in
 #     android/arabic-cert.sha256) and not with the debug key — a run against an unpinned or
 #     different key stops after the build, printing the fingerprint, because an APK under another
 #     key can never update the copies already on people's phones.
+#
+# Two ways in:
+#   * by hand, with a revision, for a release of your own choosing;
+#   * by itself, when a sync pull request from .github/workflows/upstream.yml is merged — the
+#     revision is then read from the tags that already exist, and the publishing follows the same
+#     checks. That is the last link of the chain: upstream release → sync pull request → a person
+#     merges it → signed release → the app offers it.
 
 on:
   workflow_dispatch:
     inputs:
       revision:
-        description: "The Arabic revision of this base (an integer): 1 gives versionName 1.0.1.1"
-        required: true
-        default: "1"
+        description: "The Arabic revision of this base (1 → 1.0.1.1). Empty = the next one"
+        required: false
+        default: ""
       publish:
         description: "Create the tag and the GitHub release (uncheck to only build and verify)"
         type: boolean
         default: true
+  pull_request:
+    types: [closed]
+    branches: ["codex/arabic-standalone-phase2"]
 
 concurrency:
   group: arabic-release
@@ -44,6 +54,12 @@ env:
 jobs:
   release:
     name: build · verify · publish
+    # By hand always; by itself only when the merged pull request came from the sync branch, so a
+    # documentation change to this branch does not publish an app.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.merged == true &&
+       startsWith(github.event.pull_request.head.ref, 'upstream/'))
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     steps:
@@ -114,7 +130,8 @@ jobs:
           echo "the key is in place: alias $alias, one private key entry"
 
       # One invocation for both modes: the script owns the version arithmetic, the checks, the
-      # build, the signature pin and the release. --revision is the only input that matters.
+      # build, the signature pin and the release. With no revision it takes the next one from the
+      # tags, which is what makes the merge-triggered run need no input at all.
       - name: Build, verify and publish
         id: release
         env:
@@ -122,8 +139,11 @@ jobs:
           ARABIC_CERT_SHA256: ${{ vars.ARABIC_CERT_SHA256 }}
         run: |
           set -euo pipefail
-          args=(--revision "${{ inputs.revision }}")
-          if [ "${{ inputs.publish }}" = "true" ]; then args+=(--publish); fi
+          args=()
+          if [ -n "${{ inputs.revision }}" ]; then args+=(--revision "${{ inputs.revision }}"); fi
+          publish="${{ github.event_name == 'pull_request' || inputs.publish == 'true' }}"
+          if [ "$publish" = "true" ]; then args+=(--publish); fi
+          echo "running: scripts/arabic-release-apk.sh ${args[*]:-(defaults)}"
           bash scripts/arabic-release-apk.sh "${args[@]}"
 
       # Kept whether or not it was published: a build that failed the pin, or a verify-only run,

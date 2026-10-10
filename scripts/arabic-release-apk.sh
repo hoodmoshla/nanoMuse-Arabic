@@ -39,9 +39,7 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-[ -n "$revision" ] || { echo "usage: $0 --revision N [--check-only] [--allow-debug-key] [--publish] [--notes FILE]" >&2; exit 2; }
-case "$revision" in ''|*[!0-9]*) echo "--revision must be a positive integer, got '$revision'" >&2; exit 2 ;; esac
-[ "$revision" -ge 1 ] || { echo "--revision must be a positive integer, got '$revision'" >&2; exit 2; }
+case "$revision" in ''|*[!0-9]*) [ -z "$revision" ] || { echo "--revision must be a positive integer, got '$revision'" >&2; exit 2; } ;; esac
 
 gradle_file="$NM_GRADLE_DIR/app/build.gradle.kts"
 [ -f "$gradle_file" ] || { echo "not found: $gradle_file" >&2; exit 1; }
@@ -62,6 +60,16 @@ case "$current_name" in
 esac
 base_code="$current_code"
 if [ "$current_code" -ge 1000 ]; then base_code=$((current_code / 1000)); fi # 44003 → 44
+
+# No --revision: the next one, read from the tags that already exist. This is what lets the
+# release run on its own when a sync pull request is merged, without anyone choosing a number.
+if [ -z "$revision" ]; then
+  highest="$(git -C "$NM_ROOT" tag -l "v$base_name.*" 2>/dev/null \
+    | sed -nE "s/^v$base_name\.([0-9]+)$/\1/p" | sort -n | tail -1)"
+  revision=$(( ${highest:-0} + 1 ))
+  echo "== no --revision given: $revision (this base has ${highest:-no} release(s) tagged)"
+fi
+[ "$revision" -ge 1 ] || { echo "--revision must be a positive integer" >&2; exit 2; }
 
 version_name="$base_name.$revision"
 version_code=$((base_code * 1000 + revision))
@@ -138,6 +146,21 @@ case "$badging" in
 esac
 grep -q "versionName='$version_name'" <<<"$badging" || { echo "the APK is not $version_name" >&2; exit 1; }
 grep -q "versionCode='$version_code'" <<<"$badging" || { echo "the APK is not versionCode $version_code" >&2; exit 1; }
+
+# A release that is still debuggable is a debug build wearing a release name: anyone can attach a
+# debugger to it and read the vault. proguard-android-optimize.txt does not set the flag, and a
+# manifest edit could; it costs one line to be sure.
+if grep -q '^application-debuggable' <<<"$badging"; then
+  echo "the release APK is debuggable (application-debuggable is set)" >&2
+  exit 1
+fi
+label="$(sed -nE "s/^application-label:'([^']*)'.*/\1/p" <<<"$badging" | head -1)"
+echo "== label: $label"
+[ "$label" = "nanoMuse-Arabic" ] || {
+  echo "the launcher label is '$label', not 'nanoMuse-Arabic'" >&2
+  exit 1
+}
+grep -E '^(sdkVersion|targetSdkVersion|native-code)' <<<"$badging" | sed 's/^/     /' || true
 
 entries="$(unzip -l "$apk" | awk 'NF >= 4 { print $4 }')"
 missing=""

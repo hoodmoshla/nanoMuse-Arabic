@@ -176,8 +176,10 @@ gh workflow run "Arabic release" -f revision=1 -f publish=true
 ```
 
 `revision=1` builds `nanoMuse-Arabic-1.0.1.1-arm64.apk` at `versionCode 44001`; the next release is
-`revision=2`, and so on. Add `--repo hoodmoshla/nanoMuse-Arabic` if you are not in the clone. This
-is the same as **Actions → Arabic release → Run workflow**.
+`revision=2`, and so on. Leave `revision` empty and the script takes the next one from the tags
+that already exist (`v1.0.1.1`, `v1.0.1.2` …), which is what lets a sync pull request publish on
+its own. Add `--repo hoodmoshla/nanoMuse-Arabic` if you are not in the clone. This is the same as
+**Actions → Arabic release → Run workflow**.
 
 Until the fingerprint is pinned, a release build stops **after** signing and prints the fingerprint
 instead of publishing. That is deliberate: an APK under a key nobody chose can never install over
@@ -230,6 +232,25 @@ never pushes upstream and never publishes. The pull request is where the build h
 `android.yml` runs on it, builds the debug APK and runs the unit tests, `ArabicStringsParityTest`
 and `NmStringsParityTest` among them, so a merge that brought new strings and no Arabic for them
 fails there rather than on a phone.
+
+### The whole chain
+
+```
+nano-muse/nanoMuse publishes a release
+  → Upstream fetches it, merges it into upstream/<tag>, opens a pull request          (automatic)
+  → that pull request's own CI builds the debug APK and runs every unit test         (automatic)
+  → a person reviews it and merges                                                   (your decision)
+  → Arabic release builds the natives, runs the tests, assembles the release,
+    signs it with the permanent key, checks the fingerprint and the application id,
+    and publishes v<version> marked Latest                                           (automatic)
+  → the app's Version row reads /releases/latest and offers the update;
+    the download is refused unless it carries this app's certificate                 (in the app)
+```
+
+Nothing between the merge and the publish is a person: the revision comes from the tags, and every
+gate the workflow has (the checks, the tests, the identity, the payload, the pin) still applies —
+a release whose any of them fails publishes nothing and leaves a signed APK in the run's
+artifacts instead.
 
 The merge itself is done by hand, on a branch, in this order:
 
