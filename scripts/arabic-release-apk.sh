@@ -122,7 +122,7 @@ apk="$NM_GRADLE_DIR/app/build/outputs/apk/release/app-release.apk"
 
 # ---- the signature -----------------------------------------------------------
 build_tools="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
-certs="$("$build_tools/apksigner" verify --print-certs "$apk")"
+certs="$("$build_tools/apksigner" verify --print-certs "$apk" 2>&1)"
 echo "$certs" | grep -E "Signer #1 certificate (DN|SHA-256)" || true
 if echo "$certs" | grep -q "CN=Android Debug" && [ "$allow_debug" = 0 ]; then
   echo "signed with the debug key — android/keystore-arabic.properties is missing or unreadable" >&2
@@ -199,7 +199,11 @@ echo "== $libs native libraries, $(grep -c '^assets/' <<<"$entries" || true) ass
 grep '^lib/arm64-v8a/.*\.so$' <<<"$entries" | sed 's/^/     /'
 
 fingerprint="$(sed -nE 's/.*Signer #1 certificate SHA-256 digest: ([0-9a-fA-F]+).*/\1/p' <<<"$certs" | head -1 | tr 'A-F' 'a-f')"
-[ -n "$fingerprint" ] || { echo "could not read the signing certificate" >&2; exit 1; }
+if [ -z "$fingerprint" ]; then
+  echo "could not read the signing certificate; apksigner output follows:" >&2
+  printf '%s\n' "$certs" >&2
+  exit 1
+fi
 
 # The permanent key, pinned on purpose. Public information (it is in every APK), so it lives in
 # the repository; $ARABIC_CERT_SHA256 overrides it for a machine that keeps it elsewhere. The
