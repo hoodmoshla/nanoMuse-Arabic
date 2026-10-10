@@ -50,7 +50,7 @@ import { ProfileStore, type Profile } from './profile.ts'
 import { cloudOffFailure, relayFailure, transportFailure, type RelayRefusal } from './refusals.ts'
 import { Relay, RelayError, type Account, type Estimate, type Invite, type ProfileWrite, type RelayModel, type SignIn } from './relay.ts'
 import { TaskRunner, textOf } from './task.ts'
-import { Trajectory, type StepAction, type TrajectoryView } from './trajectory.ts'
+import { SCREEN_RUN_IDLE_MS, ScreenRuns, Trajectory, type ScreenRun, type StepAction, type TrajectoryView } from './trajectory.ts'
 import { RemoteStore, SyncEngine, SyncRelay, type RemoteLine, type SessionInfo, type SessionLine, type SyncState } from './sync.ts'
 import { AvatarMotion, ANIMATED, type MotionMood, type MotionView } from './motion.ts'
 import { DEFAULT_VIDEO_MODEL, hostOf, KNOWN_DASHSCOPE_MODELS, looksLikeVideoModel, probe as probeVideoModel, speaksDashScope, type VideoEndpoint } from './video.ts'
@@ -70,6 +70,8 @@ export const TOKEN_REF = 'NANOMUSE_CLOUD_TOKEN'
 export const PROVIDER_ID = 'nanomuse'
 /** The profile row the Models page edits too. */
 export const LLM_ROW = 'llm-pi-ai'
+/** The `409 chat_on_cloud` body's sentence (the web client shows its own words for the code). */
+export const CHAT_ON_CLOUD_MESSAGE = 'Add a provider of your own first; with nanoMuse Cloud off, nothing else could answer.'
 /** dsh-base's stock chat default (its `agent-default-model` row): what `adoptOwnDefault` and `adoptDefaultModel` read as "nothing chosen yet". */
 export const STOCK_DEFAULT_MODEL = { provider: 'deepseek-official', model: 'deepseek-flash' } as const
 /**
@@ -251,7 +253,12 @@ export interface LiveState {
   cloud: { signedIn: boolean; hint: string }
   profile: Profile
   hub: HubState
-  hands: { calls: HandsCall[]; steps: number }
+  /**
+   * The calls in flight, the step count, and `run`: the session that has this computer's
+   * screen, from its first `computer_*` call to its turn's end (null between runs). The
+   * shell's glow and capsule follow `run`, so they stay up while the model thinks.
+   */
+  hands: { calls: HandsCall[]; steps: number; run: ScreenRun | null }
   stage: StageState
   notices: Notice[]
   /** Questions the agent asked before a step, open right now (C2); the stage answers them too. */
@@ -555,6 +562,9 @@ export default class NanomuseCloud extends Service {
   private stage: StageState = NO_STAGE
   /** The hands' runs, step by step, with their pictures (0.1.40). */
   private readonly trajectory = new Trajectory()
+  /** Which session has this computer's screen right now, for the glow and the capsule. */
+  private readonly screenRuns = new ScreenRuns()
+  private runTimer: NodeJS.Timeout | undefined
   private stageTimer: NodeJS.Timeout | undefined
   private signedInCache = false
   /** When the account was last re-read for the allowance (after a turn, after a refusal). */
@@ -851,15 +861,23 @@ export default class NanomuseCloud extends Service {
         }
       })
     })
-    // The trajectory (0.1.40): the model's words before a step, and the turn's end closing the run.
+    // The trajectory (0.1.40): the model's words before a step, and the turn's end closing the
+    // run; the same end lets go of the screen (the glow and the capsule outside the window).
     this.ctx.effect(
       () =>
         this.ctx.on('session/event', (session: Session, event: SessionEvent) => {
           const id = String(session.id)
           if (event.type === 'assistant/message') this.trajectory.said(id, textOf(event.data.message.content))
-          else if (event.type === 'turn/end' && this.trajectory.running(id)) {
-            this.trajectory.turnEnded(id)
-            this.broadcast()
+          else if (event.type === 'turn/end') {
+            let changed = this.screenRuns.turnEnded(id)
+            if (this.trajectory.running(id)) {
+              this.trajectory.turnEnded(id)
+              changed = true
+            }
+            if (changed) {
+              this.armRunSweep()
+              this.broadcast()
+            }
           }
         }),
       'nanomuse cloud: trajectory',
@@ -983,16 +1001,17 @@ export default class NanomuseCloud extends Service {
   /**
    * Switch the account's models on or off as a source (the phones' *Use nanoMuse Cloud models*).
    * Off while new chats answer through the account: the chat slot moves to the first own chat
-   * model, when there is one; the hands' environment follows.
+   * model, when there is one; the hands' environment follows. With no own chat model the
+   * switch is refused (`409 chat_on_cloud`, the same rule on every client): nothing else
+   * could answer, so the state does not change and the switch stays on.
    */
   async setCloudModels(on: boolean): Promise<void> {
     if (on === !this.state.cloudModelsOff) return
+    const own = !on && this.chatChoice().provider === PROVIDER_ID ? this.ownChatChoice() : undefined
+    if (!on && this.chatChoice().provider === PROVIDER_ID && !own) throw new RelayError(409, 'chat_on_cloud', CHAT_ON_CLOUD_MESSAGE)
     const { cloudModelsOff: _off, ...rest } = this.state
     this.state = on ? rest : { ...rest, cloudModelsOff: true }
-    if (!on && this.chatChoice().provider === PROVIDER_ID) {
-      const own = this.ownChatChoice()
-      if (own) await this.defaultModelService()?.saveSelection(own).catch((error: unknown) => this.ctx.logger.warn('nanomuse cloud: chat slot not moved off the account: %s', message(error)))
-    }
+    if (own) await this.defaultModelService()?.saveSelection(own).catch((error: unknown) => this.ctx.logger.warn('nanomuse cloud: chat slot not moved off the account: %s', message(error)))
     await this.writeState()
     await this.writeHands().catch((error: unknown) => this.ctx.logger.warn('nanomuse cloud: hands model not written: %s', message(error)))
     this.broadcast()
@@ -1519,16 +1538,25 @@ export default class NanomuseCloud extends Service {
     }
   }
 
-  /** `POST /providers/remove`: the row, the credential and the choices that pointed at it. */
-  async removeProvider(id: string): Promise<void> {
-    if (id === CHATGPT_PROVIDER) return this.chatGptLogout()
+  /**
+   * `POST /providers/remove`: the row, the credential and the choices that pointed at it.
+   * `cloudModelsOn` is true when the row was the last chat source while the account's models
+   * were off, so they are on again (the person reads one sentence under the row).
+   */
+  async removeProvider(id: string): Promise<{ cloudModelsOn: boolean }> {
+    if (id === CHATGPT_PROVIDER) {
+      await this.chatGptLogout()
+      return { cloudModelsOn: false }
+    }
     const row = this.state.providers?.[id]
     if (!row) throw new RelayError(404, 'not_found', 'No such row')
-    await this.dropOwnRow(id, row)
+    const cloudModelsOn = await this.dropOwnRow(id, row)
     this.broadcast()
+    return { cloudModelsOn }
   }
 
-  private async dropOwnRow(id: string, row: OwnProvider): Promise<void> {
+  /** Removes the row and what pointed at it; true when the account's models had to come back on. */
+  private async dropOwnRow(id: string, row: OwnProvider): Promise<boolean> {
     try {
       await this.ctx.settings.mutate(LLM_ROW, [{ op: 'unset', path: ['providers', id] }])
     } catch (error: unknown) {
@@ -1554,9 +1582,10 @@ export default class NanomuseCloud extends Service {
       }
       this.state = { ...this.state, media }
     }
-    await this.releaseChatRoute(id)
+    const cloudModelsOn = await this.releaseChatRoute(id)
     await this.writeState()
     await this.writeHands()
+    return cloudModelsOn
   }
 
   /**
@@ -1564,16 +1593,28 @@ export default class NanomuseCloud extends Service {
    * or the main chat still naming it would send every turn to a route no adapter serves, and
    * the person would read `no adapter registered for provider "custom"` (NO_ADAPTER) with
    * nothing to do about it. The slot moves to the first chat model left (the account's, then
-   * the own rows'), else back to dsh's stock DeepSeek default, which the next key or sign-in
-   * adopts again as it does on a fresh profile; the main chat follows when it sat on that route.
+   * the own rows'). When nothing is left because the account's models are switched off, they
+   * come back on and the slot takes the account's chat model (the same rule as the switch
+   * itself, which refuses to go off while nothing else could answer); only with no account at
+   * all does the slot fall back to dsh's stock DeepSeek default, which the next key or sign-in
+   * adopts again as it does on a fresh profile. The main chat follows when it sat on that
+   * route. Returns true when the account's models came back on.
    */
-  private async releaseChatRoute(id: string): Promise<void> {
+  private async releaseChatRoute(id: string): Promise<boolean> {
     const svc = this.defaultModelService()
-    if (!svc) return
+    if (!svc) return false
+    let cloudModelsOn = false
     try {
       let to: { provider: string; model: string } | undefined
       if (svc.currentSelection().provider === id) {
-        const next = this.chatOptions().find((o) => o.provider !== id)
+        let next = this.chatOptions().find((o) => o.provider !== id)
+        if (!next && this.state.cloudModelsOff && this.signedInCache && this.state.account) {
+          const { cloudModelsOff: _off, ...rest } = this.state
+          this.state = rest
+          next = this.chatOptions().find((o) => o.provider !== id)
+          cloudModelsOn = true
+          this.ctx.logger.info('nanomuse: %s was the last chat source; the account\'s models are on again', id)
+        }
         to = next ? { provider: next.provider, model: next.id } : { ...STOCK_DEFAULT_MODEL }
         await svc.saveSelection(to)
         this.ctx.logger.info('nanomuse: %s is gone; new chats answer through %s/%s', id, to.provider, to.model)
@@ -1590,6 +1631,7 @@ export default class NanomuseCloud extends Service {
     } catch (error: unknown) {
       this.ctx.logger.warn('nanomuse: the chat slot could not leave %s: %s', id, message(error))
     }
+    return cloudModelsOn
   }
 
   /** `POST /chatgpt/login`: starts the runtime's sign-in and returns the page to open; `done` follows in the live state. */
@@ -1855,7 +1897,7 @@ export default class NanomuseCloud extends Service {
       cloud: { signedIn: this.signedInCache && Boolean(account), hint: account?.hint ?? '' },
       profile: this.profile.current(),
       hub: this.hubState(),
-      hands: { calls: [...this.calls.values()], steps: this.steps },
+      hands: { calls: [...this.calls.values()], steps: this.steps, run: this.screenRuns.current() },
       stage: this.stage,
       notices: this.notices,
       approvals: this.approvalDesk.list(),
@@ -2698,12 +2740,17 @@ export default class NanomuseCloud extends Service {
     this.steps += 1
     this.calls.set(callId, { id: callId, name, args: pickArgs(args), sessionId, since: now })
     this.trajectory.began(sessionId, callId)
+    this.screenRuns.began(sessionId, name, now)
+    this.armRunSweep()
     this.broadcast()
   }
 
   private ended(callId: string): void {
-    if (this.calls.delete(callId)) {
+    const call = this.calls.get(callId)
+    if (call && this.calls.delete(callId)) {
       this.lastCallAt = Date.now()
+      this.screenRuns.ended(call.sessionId, this.lastCallAt)
+      this.armRunSweep()
       this.broadcast()
     }
     // the stage empties itself a while after the hands rest
@@ -2713,6 +2760,24 @@ export default class NanomuseCloud extends Service {
       if (this.calls.size === 0 && Date.now() - this.lastCallAt >= STAGE_REST_MS - 1000) this.clearStage()
     }, STAGE_REST_MS)
     this.stageTimer.unref?.()
+  }
+
+  /**
+   * The screen runs close with their turn (`turn/end`, below); this is the safety net for a
+   * turn whose end never came: a run quiet for `SCREEN_RUN_IDLE_MS` with nothing in flight
+   * lets go of the screen, and the glow goes down.
+   */
+  private armRunSweep(): void {
+    if (this.runTimer) clearTimeout(this.runTimer)
+    this.runTimer = undefined
+    if (this.screenRuns.size === 0) return
+    this.runTimer = setTimeout(() => {
+      this.runTimer = undefined
+      const inFlight = (sessionId: string) => [...this.calls.values()].some((c) => c.sessionId === sessionId)
+      if (this.screenRuns.sweep(Date.now(), inFlight)) this.broadcast()
+      this.armRunSweep()
+    }, SCREEN_RUN_IDLE_MS + 50)
+    this.runTimer.unref?.()
   }
 
   // -- the Live stage -------------------------------------------------------------------
@@ -3310,8 +3375,7 @@ export default class NanomuseCloud extends Service {
       }
       if (req.method === 'POST' && route === '/providers/remove') {
         const body = await json(req)
-        await this.serialize(() => this.removeProvider(String(body.id ?? '')))
-        return send(res, 204)
+        return send(res, 200, await this.serialize(() => this.removeProvider(String(body.id ?? ''))))
       }
       if (req.method === 'POST' && route === '/chatgpt/login') return send(res, 200, { url: await this.chatGptLogin() })
       if (req.method === 'POST' && route === '/chatgpt/cancel') {

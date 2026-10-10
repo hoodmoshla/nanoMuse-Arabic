@@ -1,7 +1,7 @@
 # nanoMuse-Arabic: the standalone Arabic edition
 
 This repository is a fork of [nano-muse/nanoMuse](https://github.com/nano-muse/nanoMuse), released
-as an app of its own: **nanoMuse-Arabic**. It installs *beside* the official nanoMuse on the same
+as an app of its own: **nanoMuse-Arabic**, tracking upstream **1.0.1**. It installs *beside* the official nanoMuse on the same
 phone, keeps its own data, its own key and its own updates, and neither app can touch the other.
 
 Everything upstream's README, `CONTRIBUTING.md` and `AGENTS.md` say about the project is still
@@ -29,9 +29,14 @@ the accessibility service id `"$applicationId/com.openminis.app.accessibility.Mi
 file that hardcodes the id and cannot be templated; `scripts/rebrand.py` writes it, and
 `scripts/check-arabic-resources.py` fails the build if the two ever disagree.
 
-The URL scheme stays `minis://`, as upstream had it at this base. Changing it is a separate
-decision: on a phone that also runs **OpenMinis**, that scheme is claimed by both apps and Android
-asks which one to open. It does not affect the official nanoMuse (which registers `nanomuse://`).
+The URL scheme registered with the system is **`nanomuse-arabic`**, not upstream's `nanomuse`
+and not `minis`. The phone this edition exists for already runs the official nanoMuse, which
+claims `nanomuse://`; two apps claiming one scheme is a chooser every time a link, a shortcut or
+an automation arrives. Inside the app nothing changes: the links the model writes, the sandbox
+and every saved conversation keep their `minis://` form, `OwnScheme` reads all three names, and a
+link the app opens on itself is addressed to its own activity by name rather than through the
+system's resolution of a scheme. `scripts/rebrand.py` writes both the manifest line and
+`OwnScheme.SYSTEM`.
 
 ---
 
@@ -147,15 +152,18 @@ The merge itself is done by hand, on a branch, in this order:
 
 ### The keys upstream added since this fork's base
 
-Left ready for the merge, not applied: adding them now would put keys in `values-ar/` that the
-`values/` reference beside it does not have, and the parity test refuses that. When the merge
-brings them in, these are the Arabic lines:
+Applied. Upstream 1.0.1 added three `nm_` keys in every one of its locales; the same three are
+in `values-ar/nm_strings.xml` here, so `NmStringsParityTest` and
+`scripts/check-arabic-resources.py` both pass on the merged tree:
 
 ```xml
-<string name="nm_chat_no_model">لا يوجد نموذج بعد. أضف مزودًا أو اختر نموذجًا للدردشة.</string>
-<string name="nm_cloud_err_content_rejected">رفض مزوّد النموذج نصَّ هذه الرسالة. جرّب إعادة صياغتها، أو ابدأ محادثة جديدة.</string>
-<string name="nm_models_cloud_off_refused">نموذج nanoMuse Cloud مغلق، ولا يوجد نموذج آخر يجيب. اختر نموذجًا أولًا.</string>
+<string name="nm_chat_no_model">لا يوجد نموذج يمكنه الإجابة الآن. اختر واحدًا من الإعدادات › النماذج.</string>
+<string name="nm_cloud_err_content_rejected">رفض فحص المحتوى لدى مزوّد النموذج هذا الطلب. جرّب كلمات مختلفة، أو ابدأ محادثة جديدة إن تكرّر الأمر: فقد تكون الكلمات التي يعترض عليها في جزء سابق من المحادثة.</string>
+<string name="nm_models_cloud_off_refused">أضف مزوّدًا خاصًا بك أولًا؛ فمع إغلاق nanoMuse Cloud لن يجيب أي شيء آخر.</string>
 ```
+
+That is what the order above is for: a merge that brings new keys and no Arabic for them turns
+the parity test red on the next run, which is the point of having it.
 
 ---
 

@@ -224,7 +224,8 @@ Any OpenAI-compatible upstream works for chat; the image and video
 endpoints assume DashScope. Video is relayed under DashScope's own paths
 (`/api/v1/services/aigc/video-generation/video-synthesis`, `/api/v1/tasks/{id}`,
 `/api/v1/uploads`), so the app's video code only needs to point its host at
-the relay; a task can be polled by the account that created it only.
+the relay; a task can be polled by the account that created it only, and the
+relay polls on the account's behalf when the app does not (*Money*, below).
 
 ### Runtime settings (0.15)
 
@@ -415,7 +416,7 @@ block (`total`, `grant`, `left`, `unlimited`, `warn` at 80 %, `usd_cny`,
 `left_today` / `resets_at` = 0 for one more version) and each model in
 `/v1/models` carries its `nanomuse.price_cny`, so the apps show what was spent
 in both currencies. The refusal, `429 allowance_exhausted`, says what is left
-and where the two ways on lead (invite a friend, one's own key) — sign-in and
+and where the three ways on lead (one's own key, a plan one already pays for, an invited friend) — sign-in and
 the hub are never gated, only the model routes. The admin page shows spend per
 account and per day (`DAY_OFFSET_H`) in ¥ and $.
 
@@ -465,7 +466,16 @@ allowance check one by one and overshoot it together. Now each request is
 *reserved* while it runs and *settled* when it is over: a picture or a clip at
 its known price, a chat at a typical turn's worth of its model (6 000 prompt
 and 1 500 completion tokens — the ledger gets the real figure when the reply is
-in), and a clip still being made holds its price until the task is seen done.
+in), and a clip still being made holds its price until the task is seen done,
+for an hour at most. A clip is charged once, at the price fixed when it was
+submitted, the first time its task is seen `SUCCEEDED`: by the app's poll, or
+(0.24) by the relay itself. Since an app that was closed never polls, the relay
+asks the provider about every unsettled task once shortly before the hour's
+hold lapses and once more before the row is purged (three days), a handful of
+tasks a minute: `SUCCEEDED` charges the clip, `FAILED` or `CANCELED` lets the
+hold go, a task the provider no longer knows is marked `UNKNOWN`; a provider
+that does not answer is asked again next minute. A poll after the relay settled
+a task charges nothing more.
 The check counts what is held: a chat starts while anything is left beyond it,
 a picture or a clip only when its own price fits on top. At most `MAX_IN_FLIGHT`
 requests of one account run at once; the one over that is told so
@@ -506,7 +516,8 @@ with their key deletes the account, its keys, ledger and devices.
 
 Two more panels come from `/v1/admin/series` and `/v1/admin/traffic`: the
 relay's own numbers by day (sign-ins, new and active accounts, sign-ups
-through an invite, data switches turned on, calls, refusals, upstream errors),
+through an invite, data switches turned on, calls, refusals, upstream errors, and the
+provider's content-check refusals, counted apart since they say nothing about the provider),
 the remembered devices by kind and system, the invite funnel and — with
 `WEB_INFO_URL` — how many nanoMuse Web accounts and sessions the gateway
 holds; and, with `TRAFFIC_DB`, the project site's visits and downloads:
@@ -656,8 +667,9 @@ tokens, the newest turns, and the export.
 
 ```bash
 # is it well? aggregates only (0.13): requests under way, the hub's counters, the last
-# hour's requests / upstream errors / refusals / sign-ins, the database, `problems` —
-# what deploy/nanomuse-hk/selfcheck.sh reads every ten minutes
+# hour's requests / upstream errors / content-check refusals / refusals / sign-ins, the
+# database, `problems` (twenty upstream errors in an hour is one; a content check declining
+# words is not) — what deploy/nanomuse-hk/selfcheck.sh reads every ten minutes
 curl -H "X-Admin-Token: $CLOUD_ADMIN_TOKEN" https://$CLOUD_DOMAIN/v1/admin/health
 # who signed up (with the phone numbers and addresses since 0.22 — the console's answer)
 curl -H "X-Admin-Token: $CLOUD_ADMIN_TOKEN" https://$CLOUD_DOMAIN/v1/admin/accounts

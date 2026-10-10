@@ -625,7 +625,7 @@
     <string name="nm_welcome_feat_hands">Руки: он пользуется вашим телефоном</string>
     <string name="nm_welcome_feat_hands_sub">Берёт билет на поезд, заказывает еду, ищет что-то в приложении; вы смотрите и можете остановить в любой момент</string>
     <string name="nm_welcome_feat_reach">Связь: ваши компьютеры, отсюда</string>
-    <string name="nm_welcome_feat_reach_sub">Подключите Mac, Windows или Linux и давайте ему работу с телефона</string>
+    <string name="nm_welcome_feat_reach_sub">Установите nanoMuse Desktop на Mac, Windows или Linux, войдите с той же учётной записью и давайте ему работу с телефона</string>
     <string name="nm_welcome_notice">nanoMuse является некоммерческим проектом сообщества с открытым кодом, бесплатным навсегда. Модель идёт с бесплатным лимитом, который оплачивает разработчик; дальше нужен ваш собственный ключ. Ничего не продаётся; что хранит релей, написано в политике конфиденциальности, а Настройки → Управление данными в ваших руках.</string>
     <string name="nm_welcome_hands_title">Разрешите ему пользоваться телефоном</string>
     <string name="nm_welcome_hands_sub">С двумя разрешениями он может открывать приложения, нажимать и печатать за вас. Капсула с каждым шагом и кнопкой «Стоп» остаётся на экране; входы, пароли и коды всегда за вами.</string>
@@ -714,6 +714,7 @@
     <string name="nm_cloud_err_password_weak">Этот пароль слишком легко угадать.</string>
     <string name="nm_cloud_err_signup_closed">Регистрация на этом релее пока приостановлена. Уже существующий аккаунт может войти как прежде.</string>
     <string name="nm_cloud_err_too_large">Это сообщение слишком велико для модели. Сократите его, уберите часть вложений или начните новый чат.</string>
+    <string name="nm_cloud_err_content_rejected">Проверка содержимого у поставщика модели отклонила этот запрос. Попробуйте другие слова, а если это повторяется, начните новый чат: слова, к которым есть претензии, могут быть раньше в разговоре.</string>
     <string name="nm_cloud_err_provider_busy">Провайдер модели сейчас перегружен. Повторите через минуту.</string>
     <string name="nm_cloud_err_provider_busy_wait">Провайдер модели сейчас перегружен. Повторите через %1$s.</string>
     <string name="nm_cloud_err_model_not_offered">nanoMuse Cloud больше не предлагает эту модель. Выберите другую в Настройки → nanoMuse Cloud.</string>
@@ -1096,6 +1097,8 @@
     <string name="nm_models_cloud_switch">Использовать модели nanoMuse Cloud</string>
     <string name="nm_models_cloud_on_sub">nanoMuse Cloud входит в источники для строк ниже; то, что выполняется на нём, списывается с вашего лимита.</string>
     <string name="nm_models_cloud_off_sub">Выключено: на nanoMuse Cloud ничего не выполняется, пока вы не нажмёте \"Использовать nanoMuse Cloud в этот раз\". Вы остаётесь в аккаунте для синхронизации и своих устройств.</string>
+    <string name="nm_models_cloud_off_refused">Сначала добавьте собственного провайдера; с выключенным nanoMuse Cloud отвечать было бы нечему.</string>
+    <string name="nm_chat_no_model">Сейчас ни одна модель не может ответить. Выберите одну в Настройки › Модели.</string>
     <string name="nm_cloud_provider_no_delete">Этот провайдер и есть ваш аккаунт nanoMuse Cloud. Выключите его выше, чтобы не использовать его модели; чтобы выйти, откройте Настройки › nanoMuse Cloud.</string>
     <string name="nm_welcome_own_key">Использовать свой ключ API</string>
     <string name="nm_useit_title">Для чего использовать</string>

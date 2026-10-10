@@ -616,7 +616,7 @@
     <string name="nm_welcome_feat_hands">Tangan: ia menggunakan telefon anda</string>
     <string name="nm_welcome_feat_hands_sub">Menempah kereta api, memesan makanan, mencari sesuatu dalam aplikasi; anda memerhati, dan boleh menghentikannya bila-bila masa</string>
     <string name="nm_welcome_feat_reach">Capaian: komputer anda, dari sini</string>
-    <string name="nm_welcome_feat_reach_sub">Pasangkan mesin Mac, Windows atau Linux dan beri ia kerja dari telefon</string>
+    <string name="nm_welcome_feat_reach_sub">Pasang nanoMuse Desktop pada mesin Mac, Windows atau Linux, log masuk dengan akaun yang sama, dan beri ia kerja dari telefon</string>
     <string name="nm_welcome_notice">nanoMuse ialah projek komuniti sumber terbuka bukan untuk keuntungan: percuma, selamanya. Model datang dengan peruntukan percuma yang dibayar oleh pembangun; selepas itu, kunci anda sendiri. Tiada apa-apa dijual; apa yang disimpan relay ada dalam dasar privasi, dan Tetapan → Kawalan data adalah milik anda.</string>
     <string name="nm_welcome_hands_title">Benarkan ia menggunakan telefon anda</string>
     <string name="nm_welcome_hands_sub">Dengan dua kebenaran, ia boleh membuka aplikasi, mengetik dan menaip untuk anda. Satu kapsul dengan setiap langkah dan butang Berhenti kekal di skrin; log masuk, kata laluan dan kod sentiasa milik anda.</string>
@@ -705,6 +705,7 @@
     <string name="nm_cloud_err_password_weak">Kata laluan itu terlalu mudah diteka.</string>
     <string name="nm_cloud_err_signup_closed">Pendaftaran di relay ini dijeda buat masa ini. Akaun yang sudah ada masih boleh log masuk.</string>
     <string name="nm_cloud_err_too_large">Mesej itu terlalu besar untuk model. Pendekkan, buang beberapa lampiran, atau mulakan sembang baharu.</string>
+    <string name="nm_cloud_err_content_rejected">Semakan kandungan penyedia model menolak permintaan ini. Cuba perkataan lain, atau mulakan sembang baharu jika ia berulang: perkataan yang ditolak mungkin berada lebih awal dalam perbualan.</string>
     <string name="nm_cloud_err_provider_busy">Penyedia model sedang sibuk. Cuba lagi sebentar nanti.</string>
     <string name="nm_cloud_err_provider_busy_wait">Penyedia model sedang sibuk. Cuba lagi dalam %1$s.</string>
     <string name="nm_cloud_err_model_not_offered">nanoMuse Cloud tidak lagi menawarkan model itu. Pilih yang lain di Tetapan → nanoMuse Cloud.</string>
@@ -1084,6 +1085,8 @@
     <string name="nm_models_cloud_switch">Gunakan model nanoMuse Cloud</string>
     <string name="nm_models_cloud_on_sub">nanoMuse Cloud ialah salah satu sumber untuk baris di bawah; apa yang berjalan di situ ditolak daripada peruntukan anda.</string>
     <string name="nm_models_cloud_off_sub">Dimatikan: tiada apa berjalan di nanoMuse Cloud melainkan anda ketik \"Guna nanoMuse Cloud kali ini\". Anda kekal log masuk untuk penyegerakan dan peranti anda.</string>
+    <string name="nm_models_cloud_off_refused">Tambah penyedia anda sendiri dahulu; dengan nanoMuse Cloud dimatikan, tiada yang lain boleh menjawab.</string>
+    <string name="nm_chat_no_model">Tiada model yang boleh menjawab sekarang. Pilih satu di Tetapan › Model.</string>
     <string name="nm_cloud_provider_no_delete">Pembekal ini ialah akaun nanoMuse Cloud anda. Matikan di atas untuk berhenti menggunakan modelnya; untuk log keluar, buka Tetapan › nanoMuse Cloud.</string>
     <string name="nm_welcome_own_key">Guna kunci API sendiri</string>
     <string name="nm_useit_title">Guna untuk</string>

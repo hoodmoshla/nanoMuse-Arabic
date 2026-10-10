@@ -10,7 +10,7 @@
  */
 import { createElement as h, Fragment, useCallback, useEffect, useState, type ReactNode } from 'react'
 import type { ProviderEntry } from '../catalogue.ts'
-import { call, errorStyle, muted, type Translate, failureText } from './api.ts'
+import { call, errorCode, errorStyle, muted, type Translate, failureText } from './api.ts'
 import { settingsBus } from './bus.ts'
 import { IconHand, IconImage, IconMessage, IconVideo } from './icons.tsx'
 import { useLive } from './live.ts'
@@ -69,7 +69,7 @@ function slotIcon(slot: Slot): ReactNode {
 }
 
 /** `GET /models`, again whenever the host's live state says the rows, the sign-in or a choice moved. */
-export function useModels(): { view: ModelsView | undefined; error: string | undefined; reload(): void; setView(view: ModelsView): void } {
+export function useModels(t: Translate): { view: ModelsView | undefined; error: string | undefined; reload(): void; setView(view: ModelsView): void } {
   const live = useLive()
   const [view, setView] = useState<ModelsView | undefined>()
   const [error, setError] = useState<string | undefined>()
@@ -81,7 +81,7 @@ export function useModels(): { view: ModelsView | undefined; error: string | und
     let alive = true
     call<ModelsView>('models')
       .then((v) => { if (alive) { setView(v); setError(undefined) } })
-      .catch((err: unknown) => { if (alive) setError((err as Error).message) })
+      .catch((err: unknown) => { if (alive) setError(failureText(t, err)) })
     return () => { alive = false }
   }, [tick, key])
   return { view, error, reload, setView }
@@ -146,20 +146,25 @@ export function openAccountWays(): void {
 
 export function makeModelsSection(t: Translate) {
   return function ModelsSection(): ReactNode {
-    const { view, error, reload, setView } = useModels()
+    const { view, error, reload, setView } = useModels(t)
     const providers = useProviders(t)
     const [busy, setBusy] = useState<Slot | null>(null)
     const [said, setSaid] = useState<Partial<Record<Slot, string>>>({})
     const [failed, setFailed] = useState<string | undefined>()
     const [switching, setSwitching] = useState(false)
+    // the host refused the switch (`409 chat_on_cloud`: the chat slot is the account's and nothing of
+    // one's own could answer); one sentence under the switch, which stays on
+    const [switchNote, setSwitchNote] = useState<string | undefined>()
     // Signed in: the one switch for the account as a model source. Off, nanoMuse Cloud leaves every
     // row's list and order and no side call runs on it; the sign-in stays (sync, the devices).
     const setCloudModels = (on: boolean) => {
       setSwitching(true)
       setFailed(undefined)
+      setSwitchNote(undefined)
       call<ModelsView>('cloud-models', { on })
         .then((next) => { setView(next); setSaid({}); reload() })
-        .catch((err: unknown) => setFailed(t('failed', { message: (err as Error).message })))
+        .catch((err: unknown) => { if (errorCode(err) !== 'chat_on_cloud') throw err; setSwitchNote(t('mlChatOnCloud')) })
+        .catch((err: unknown) => setFailed(failureText(t, err)))
         .finally(() => setSwitching(false))
     }
     const pick = (slot: Slot, provider: string, model: string) => {
@@ -205,7 +210,8 @@ export function makeModelsSection(t: Translate) {
           h('div', { className: 'nm-row', 'data-testid': 'nm-ml-cloud-row' },
             h('div', { className: 'nm-row-main' },
               h('span', { className: 'nm-row-title' }, t('mlCloudModels')),
-              h('span', { className: 'nm-row-sub nm-wrap' }, view.cloudModels ? t('mlCloudModelsOn') : t('mlCloudModelsOff'))),
+              h('span', { className: 'nm-row-sub nm-wrap' }, view.cloudModels ? t('mlCloudModelsOn') : t('mlCloudModelsOff')),
+              switchNote ? h('span', { className: 'nm-row-sub nm-wrap', role: 'alert', style: errorStyle, 'data-testid': 'nm-ml-cloud-note' }, switchNote) : null),
             h('button', { type: 'button', role: 'switch', className: 'nm-switch', 'aria-checked': view.cloudModels, 'aria-label': t('mlCloudModels'), 'data-testid': 'nm-ml-cloud-switch', disabled: switching || busy !== null, onClick: () => setCloudModels(!view.cloudModels) })))
       : null
     return h('div', { className: 'nm-section', 'data-testid': 'nm-models-section' },

@@ -54,8 +54,8 @@ IOS = ROOT / "android" / "src" / "ios"
 APP_ID = "io.github.nanomuse.arabic"
 NAME = "nanoMuse"
 LABEL = "nanoMuse-Arabic"
-VERSION_NAME = "0.1.41"
-VERSION_CODE = 42
+VERSION_NAME = "1.0.1"
+VERSION_CODE = 44
 # This edition's repository: the update check reads it and the About rows link to
 # it. Never upstream's — that feed carries the English app, signed with a key this
 # build does not share.
@@ -203,6 +203,36 @@ def arabic_edition() -> None:
             path,
             [(r'(<string name="app_name">)[^<]+(</string>)', rf"\g<1>{LABEL}\g<2>")],
         )
+
+
+SYSTEM_SCHEME = (
+    "nanomuse-arabic"  # what the system knows this edition by; inside, links stay minis://
+)
+
+
+def schemes() -> None:
+    """The scheme this edition registers with the system.
+
+    Upstream registers `nanomuse`; this edition registers `nanomuse-arabic` instead, because the
+    phone it exists for already has the official app on it, and two apps claiming one scheme means
+    a chooser every time a link, a shortcut or an automation arrives. The in-app vocabulary
+    (`minis://…`: the sandbox, the model, every saved conversation) does not change, and
+    [OwnScheme] reads both names, so a link in either form still lands here. The rule matches
+    upstream's `minis` as well, so it is idempotent on a fresh upstream tree and on this one.
+    """
+    edit(
+        MAIN / "AndroidManifest.xml",
+        [
+            (
+                r'<data android:scheme="(?:minis|nanomuse)" />',
+                f'<data android:scheme="{SYSTEM_SCHEME}" />',
+            )
+        ],
+    )
+    edit(
+        NM_JAVA / "deeplink" / "OwnScheme.kt",
+        [(r'const val SYSTEM = "[^"]+"', f'const val SYSTEM = "{SYSTEM_SCHEME}"')],
+    )
 
 
 # (pattern, replacement); applied to Theme.kt only.
@@ -374,13 +404,29 @@ def ios_ids() -> None:
     )
 
 
+def ios_schemes() -> None:
+    """Same as `schemes()` for the phone's other half: Info.plist registers `nanomuse` and
+    `nanomuse-mcp`, the share extension opens `nanomuse://share`; `minis://` stays in-app."""
+    edit(
+        IOS / "Info.plist",
+        [
+            (r"<string>minis</string>", f"<string>{SYSTEM_SCHEME}</string>"),
+            (r"<string>minis-mcp</string>", f"<string>{SYSTEM_SCHEME}-mcp</string>"),
+        ],
+    )
+    edit(
+        IOS / "ShareExtension" / "ShareViewController.swift",
+        [(r"minis://share", f"{SYSTEM_SCHEME}://share")],
+    )
+
+
 def ios_project() -> None:
     pbx = IOS / "Minis.xcodeproj" / "project.pbxproj"
     edit(
         pbx,
         [
-            (r"MARKETING_VERSION = 1\.\d+;", f"MARKETING_VERSION = {VERSION_NAME};"),
-            (r"MARKETING_VERSION = 0\.\d+\.\d+;", f"MARKETING_VERSION = {VERSION_NAME};"),
+            # upstream's `1.13` and every version of ours before this one
+            (r"MARKETING_VERSION = \d+(?:\.\d+)+;", f"MARKETING_VERSION = {VERSION_NAME};"),
             (r"CURRENT_PROJECT_VERSION = \d+;", f"CURRENT_PROJECT_VERSION = {VERSION_CODE};"),
             (
                 r'INFOPLIST_KEY_CFBundleDisplayName = "Share to Minis";',
@@ -536,6 +582,7 @@ def ios() -> None:
     if not IOS.is_dir():
         return
     ios_ids()
+    ios_schemes()
     ios_project()
     ios_product_name()
     ios_links()
@@ -548,7 +595,9 @@ def ios_check() -> int:
         return 0
     problems = 0
     leftovers = re.compile(
-        r"com\.openminis\.(app|Minis)|openminis\.github\.io|MARKETING_VERSION = 1\."
+        r"com\.openminis\.(app|Minis)|openminis\.github\.io|MARKETING_VERSION = (?!"
+        + re.escape(VERSION_NAME)
+        + r";)"
     )
     for path in ios_files(".swift", ".plist", ".entitlements", ".pbxproj"):
         for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
@@ -559,6 +608,14 @@ def ios_check() -> int:
         if path.name != "PrivacyInfo.xcprivacy" and WORD.search(path.read_text(encoding="utf-8")):
             print(f"  ! Minis left in {path.relative_to(ROOT)}")
             problems += 1
+    plist = (IOS / "Info.plist").read_text(encoding="utf-8")
+    if re.search(r"<string>minis(-mcp)?</string>", plist):
+        print("  ! Info.plist still registers upstream's URL scheme")
+        problems += 1
+    share = (IOS / "ShareExtension" / "ShareViewController.swift").read_text(encoding="utf-8")
+    if "minis://share" in share:
+        print("  ! the share extension still opens minis://share")
+        problems += 1
     return problems
 
 
@@ -599,6 +656,9 @@ def check() -> int:
             if leftovers.search(line):
                 print(f"  ! {path.relative_to(ROOT)}:{i}: {line.strip()[:80]}")
                 problems += 1
+    if 'android:scheme="minis"' in (MAIN / "AndroidManifest.xml").read_text(encoding="utf-8"):
+        print("  ! AndroidManifest.xml still registers upstream's URL scheme")
+        problems += 1
     return problems
 
 
@@ -611,6 +671,7 @@ def main() -> int:
     product_name()
     soul_defaults()
     links()
+    schemes()
     colours()
     notification_icons()
     notification_faces()

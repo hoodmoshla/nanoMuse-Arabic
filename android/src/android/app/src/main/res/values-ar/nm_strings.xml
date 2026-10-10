@@ -1066,6 +1066,9 @@
     <string name="nm_ways_devices">الأجهزة</string>
     <!-- 0.1.41 Choice: Settings → Models, the "Use it for" card, one turn on the Cloud -->
     <string name="nm_models_title">نماذج</string>
+    <string name="nm_models_cloud_off_refused">أضف مزوّدًا خاصًا بك أولًا؛ فمع إغلاق nanoMuse Cloud لن يجيب أي شيء آخر.</string>
+    <string name="nm_cloud_err_content_rejected">رفض فحص المحتوى لدى مزوّد النموذج هذا الطلب. جرّب كلمات مختلفة، أو ابدأ محادثة جديدة إن تكرّر الأمر: فقد تكون الكلمات التي يعترض عليها في جزء سابق من المحادثة.</string>
+    <string name="nm_chat_no_model">لا يوجد نموذج يمكنه الإجابة الآن. اختر واحدًا من الإعدادات › النماذج.</string>
     <string name="nm_models_intro">أي نموذج يقوم بأيّ وظيفة. يفتح كل صف منتقلاً لاختيار النموذج؛ تظهر هناك nanoMuse Cloud والمزوّدون الذين أضفتهم مع النماذج الملائمة.</string>
     <string name="nm_models_chat_title">دردشة</string>
     <string name="nm_models_chat_sub">النموذج الذي يتحدث معك.</string>

@@ -15,6 +15,9 @@
   <a href="https://github.com/nano-muse/nanoMuse/blob/main/docs/readme/README_vi.md">Tiếng Việt</a>
 </p>
 <p align="center">
+  <a href="https://trendshift.io/repositories/286894?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-286894" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/286894/daily?language=Swift" alt="nano-muse%2FnanoMuse | Trendshift" width="250" height="55"/></a>
+</p>
+<p align="center">
   <a href="https://github.com/nano-muse/nanoMuse/stargazers"><img src="https://img.shields.io/github/stars/nano-muse/nanoMuse?style=flat&label=stars" alt="Estrellas en GitHub"></a>
   <a href="https://github.com/nano-muse/nanoMuse/releases"><img src="https://img.shields.io/github/downloads/nano-muse/nanoMuse/total?label=downloads" alt="Descargas"></a>
   <a href="https://github.com/nano-muse/nanoMuse/actions/workflows/ci.yml"><img src="https://github.com/nano-muse/nanoMuse/actions/workflows/ci.yml/badge.svg?branch=main" alt="Test Suite"></a>
@@ -27,7 +30,7 @@
 
 **nanoMuse es un agente personal de código abierto para todos tus dispositivos.** Un solo agente con nombre y aspecto propios, al estilo del [Muse](https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/) de Meta: hace cosas en vez de responder preguntas, sigue trabajando con la app cerrada, se acuerda de ti y se detiene a preguntar antes de cualquier cosa que no podrías deshacer.
 
-*nano* significa el conjunto completo, lo bastante pequeño para que lo ejecutes y lo despliegues tú mismo: la app del teléfono, la de escritorio, la consola web y el relay que las une están en este repositorio, bajo GPL-3.0-or-later. **[Gratuito, de código abierto y sin ánimo de lucro. Construyámoslo juntos.](../../CONTRIBUTING.md)** Al iniciar sesión recibes un crédito gratuito de uso de modelos en el relay de la comunidad (lo paga el desarrollador); cuando se agota, [usa tu propia clave](../own-key.md). El mismo relay funciona en un servidor tuyo, así que nada tiene que salir de casa. Última versión: **0.1.41 Choice**, [notas de la versión](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.41) · [pruébalo en el navegador](https://demo.nanomuse.dev/).
+*nano* significa el conjunto completo, lo bastante pequeño para que lo ejecutes y lo despliegues tú mismo: la app del teléfono, la de escritorio, la consola web y el relay que las une están en este repositorio, bajo GPL-3.0-or-later. **[Gratuito, de código abierto y sin ánimo de lucro. Construyámoslo juntos.](../../CONTRIBUTING.md)** Al iniciar sesión recibes un crédito gratuito de uso de modelos en el relay de la comunidad (lo paga el desarrollador); cuando se agota, [usa tu propia clave](../own-key.md). El mismo relay funciona en un servidor tuyo, así que nada tiene que salir de casa. Última versión: **1.0.1 Ballast**, [notas de la versión](https://github.com/nano-muse/nanoMuse/releases/tag/v1.0.1) · [pruébalo en el navegador](https://demo.nanomuse.dev/).
 
 https://github.com/user-attachments/assets/c7694d5a-9450-4f99-9254-5d70560d7565
 
@@ -35,9 +38,10 @@ https://github.com/user-attachments/assets/c7694d5a-9450-4f99-9254-5d70560d7565
 
 ## 🗞️ Novedades
 
-- `2026-10-07` 📄 Nuestro artículo está disponible en [arXiv](https://arxiv.org/abs/2610.08699).
-- `2026-10-07` 🚀 Última versión: [0.1.41 Choice](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.41).
-- `2026-09-25` 🎉 nanoMuse se publica.
+- `2026-10-09` 🚀 Ya está la versión [1.0.0 Keel](https://github.com/nano-muse/nanoMuse/releases/tag/v1.0.0), para el teléfono, el ordenador y el navegador; se instala sobre la anterior conservando tus datos, y sus notas de la versión recogen cada cambio.
+- `2026-10-08` 🤗 Nuestro artículo está en [Hugging Face Daily Papers](https://huggingface.co/papers/2610.08699), tercero en la lista del 8 de octubre; las preguntas y los comentarios son bienvenidos en la página del artículo.
+- `2026-10-07` 📄 Nuestro artículo está disponible en [arXiv](https://arxiv.org/abs/2610.08699): *nanoMuse: An Open-Source Personal Agent for Every Device You Own*, de Guangyi Liu, Yong Liu y Jiangning Zhang (Universidad de Zhejiang); la cita está al final de esta página.
+- `2026-09-25` 🎉 nanoMuse se publica en GitHub bajo GPL-3.0-or-later: una aplicación Android construida sobre OpenMinis 1.13; el relay, la aplicación de escritorio y la aplicación para iPhone llegaron en los días siguientes.
 
 Todas las versiones: [releases](https://github.com/nano-muse/nanoMuse/releases).
 
@@ -46,11 +50,11 @@ Todas las versiones: [releases](https://github.com/nano-muse/nanoMuse/releases).
 | | |
 |---|---|
 | **Navegador** | [demo.nanomuse.dev](https://demo.nanomuse.dev/): un nanoMuse en un teléfono simulado, tras iniciar sesión. Es una demo; las apps de abajo son las de verdad |
-| **Android** 8.0+, arm64 | [nanoMuse-0.1.41-arm64.apk](https://github.com/nano-muse/nanoMuse/releases/download/v0.1.41/nanoMuse-0.1.41-arm64.apk): todas las versiones se firman con la misma clave y se instalan sobre la anterior |
-| **iPhone / iPad** | [TestFlight](https://testflight.apple.com/join/ZHexbDqc): una beta; el enlace entrega la compilación cuando Apple apruebe la revisión beta · [iOS](../ios.md) |
-| **macOS** 12+ | [Apple Silicon](https://github.com/nano-muse/nanoMuse/releases/download/v0.1.41/nanoMuse-Desktop-0.1.41-mac-arm64.dmg) · [Intel](https://github.com/nano-muse/nanoMuse/releases/download/v0.1.41/nanoMuse-Desktop-0.1.41-mac-x64.dmg): sin notarizar: la primera vez, clic derecho → *Abrir* |
-| **Windows** 10+ | [nanoMuse-Desktop-0.1.41-win-x64.exe](https://github.com/nano-muse/nanoMuse/releases/download/v0.1.41/nanoMuse-Desktop-0.1.41-win-x64.exe): pulsa *Ejecutar de todos modos* una vez |
-| **Linux** x64 | [AppImage](https://github.com/nano-muse/nanoMuse/releases/download/v0.1.41/nanoMuse-Desktop-0.1.41-linux-x64.AppImage) · [.deb](https://github.com/nano-muse/nanoMuse/releases/download/v0.1.41/nanoMuse-Desktop-0.1.41-linux-x64.deb) · [tar.gz](https://github.com/nano-muse/nanoMuse/releases/download/v0.1.41/nanoMuse-Desktop-0.1.41-linux-x64.tar.gz) |
+| **Android** 8.0+, arm64 | [nanoMuse-1.0.1-arm64.apk](https://github.com/nano-muse/nanoMuse/releases/download/v1.0.1/nanoMuse-1.0.1-arm64.apk): todas las versiones se firman con la misma clave y se instalan sobre la anterior |
+| **iPhone / iPad** | [TestFlight](https://testflight.apple.com/join/ZHexbDqc): una beta que pasó la revisión beta de Apple; el enlace la instala · [iOS](../ios.md) |
+| **macOS** 12+ | [Apple Silicon](https://github.com/nano-muse/nanoMuse/releases/download/v1.0.1/nanoMuse-Desktop-1.0.1-mac-arm64.dmg) · [Intel](https://github.com/nano-muse/nanoMuse/releases/download/v1.0.1/nanoMuse-Desktop-1.0.1-mac-x64.dmg): sin notarizar: la primera vez, clic derecho → *Abrir* |
+| **Windows** 10+ | [nanoMuse-Desktop-1.0.1-win-x64.exe](https://github.com/nano-muse/nanoMuse/releases/download/v1.0.1/nanoMuse-Desktop-1.0.1-win-x64.exe): pulsa *Ejecutar de todos modos* una vez |
+| **Linux** x64 | [AppImage](https://github.com/nano-muse/nanoMuse/releases/download/v1.0.1/nanoMuse-Desktop-1.0.1-linux-x64.AppImage) · [.deb](https://github.com/nano-muse/nanoMuse/releases/download/v1.0.1/nanoMuse-Desktop-1.0.1-linux-x64.deb) · [tar.gz](https://github.com/nano-muse/nanoMuse/releases/download/v1.0.1/nanoMuse-Desktop-1.0.1-linux-x64.tar.gz) |
 | **Docker** | `bash scripts/self-host.sh --local` para tu propio relay; `docker compose up -d app` para la app web en un servidor tuyo; véase [autoalojamiento](../self-hosting.md) |
 
 Todas las descargas vienen de la [última versión](https://github.com/nano-muse/nanoMuse/releases/latest); los mismos archivos están en [nanomuse.cn/dl](https://nanomuse.cn/dl/) si GitHub va lento donde estás. Abre la app, inicia sesión con un correo o un número de teléfono de China continental, y el agente ya tiene un modelo con el que pensar. El teléfono, el escritorio y la web comparten una cuenta y muestran las mismas conversaciones.
@@ -72,7 +76,7 @@ Todas las descargas vienen de la [última versión](https://github.com/nano-muse
   </tr>
   <tr>
     <td width="50%" valign="top"><b>Un aspecto propio.</b><br>Descríbelo, tu modelo de imagen lo dibuja, un modelo de vídeo lo hace moverse. Un dragoncito por defecto.</td>
-    <td width="50%" valign="top"><b>Cualquier modelo.</b><br>El crédito del relay, tu propia clave en uno de dieciocho proveedores (Bailian, OpenRouter, OpenAI, Gemini, DeepSeek y más), o un plan que ya pagas: ChatGPT, Claude, Kimi. Si un proveedor no tiene modelos de imagen o vídeo, esas dos funciones quedan apagadas y la app lo dice.</td>
+    <td width="50%" valign="top"><b>Cualquier modelo.</b><br>El crédito del relay, tu propia clave en uno de diecinueve proveedores (Bailian, OpenRouter, OpenAI, Gemini, DeepSeek y más), o un plan que ya pagas: ChatGPT, Claude, Kimi. Si un proveedor no tiene modelos de imagen o vídeo, esas dos funciones quedan apagadas y la app lo dice.</td>
   </tr>
 </table>
 
@@ -108,6 +112,27 @@ Un VPS, una hora: [docs/self-hosting.md](../self-hosting.md). Tres caminos: sin 
 
 Úsalo para una tarea real, cuenta qué se rompió y luego elige algo concreto: [CONTRIBUTING.md](../../CONTRIBUTING.md) tiene la configuración y las convenciones, [AGENTS.md](../../AGENTS.md) las reglas que sigue un agente de programación en este repositorio, y la [hoja de ruta](../roadmap.md) dice por dónde empezar. [Issues](https://github.com/nano-muse/nanoMuse/issues) · [Discussions](https://github.com/nano-muse/nanoMuse/discussions) · [Discord](https://discord.gg/bkTySmm28X).
 
+## Mantenedores
+
+<table>
+  <tr>
+    <td align="center"><a href="https://github.com/lgy0404"><img src="https://avatars.githubusercontent.com/u/63797388?v=4&s=80" width="80" height="80" alt="Guangyi Liu"><br><strong>Guangyi Liu</strong></a><br><a href="mailto:guangyiliu@zju.edu.cn"><img src="https://img.shields.io/badge/e--mail-guangyiliu%40zju.edu.cn-0a66e4" alt="guangyiliu@zju.edu.cn"></a></td>
+  </tr>
+</table>
+
+## Colaboradores de la comunidad
+
+Todas las personas con un cambio integrado en `main`, según la lista de colaboradores de GitHub.
+
+<!-- contributors:start -->
+<p>
+<a href="https://github.com/wsvn53"><img src="https://avatars.githubusercontent.com/u/912204?v=4&s=48" width="48" height="48" alt="wsvn53"></a>
+<a href="https://github.com/aliabbas6622"><img src="https://avatars.githubusercontent.com/u/193962983?v=4&s=48" width="48" height="48" alt="aliabbas6622"></a>
+<a href="https://github.com/PovedaAqui"><img src="https://avatars.githubusercontent.com/u/9494679?v=4&s=48" width="48" height="48" alt="PovedaAqui"></a>
+<a href="https://github.com/jiangkaiqi2005"><img src="https://avatars.githubusercontent.com/u/184961141?v=4&s=48" width="48" height="48" alt="jiangkaiqi2005"></a>
+</p>
+<!-- contributors:end -->
+
 ## ⭐️ Cita
 
 Si nanoMuse te resulta útil, te agradecemos que cites el artículo.
@@ -140,3 +165,8 @@ nanoMuse es un proyecto comunitario independiente, no afiliado a Meta Platforms,
 ## Licencia
 
 [GPL-3.0-or-later](../../LICENSE). La app del teléfono se basa en OpenMinis 1.13 (GPL-3.0), modificada desde el 2026-09-24; véase [NOTICE](../../NOTICE). Las versiones anteriores de la línea Python eran MIT (etiqueta `pre-openminis`).
+
+<p align="center">
+  <em>¡Gracias por visitar ✨ nanoMuse!</em><br><br>
+  <img src="https://visitor-badge.laobi.icu/badge?page_id=nano-muse.nanoMuse&left_text=visitors&left_color=%23555&right_color=%230a66e4" alt="Visitors">
+</p>

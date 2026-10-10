@@ -37,6 +37,7 @@ from nanomuse.llm.chatgpt import DEFAULT_MODEL as CHATGPT_DEFAULT_MODEL
 from nanomuse.logger import logger
 from nanomuse.schema import Message
 from nanomuse.search import WebSearchProvider
+from nanomuse.server.failures import describe_failure
 from nanomuse.tools import (
     Calendar,
     Contacts,
@@ -314,6 +315,18 @@ def _link_or_path(url: str) -> bool:
     )
 
 
+def _test_failed(exc: BaseException) -> dict[str, Any]:
+    """A model test that failed: the sentence a chat turn would show for the same error
+    (the apps translate it), the error's own words one tap away as ``detail``."""
+    code, text = describe_failure(exc)
+    return {
+        "ok": False,
+        "code": code,
+        "error": text,
+        "detail": f"{type(exc).__name__}: {str(exc).strip()[:400]}",
+    }
+
+
 class Connections:
     def __init__(self, svc: MuseService):
         self.svc = svc
@@ -576,12 +589,20 @@ class Connections:
         return self.view()["llm"]
 
     def _swap_llm(self) -> None:
+        """The model changed: a new client for the app and for every idle thread. A thread in
+        the middle of a turn keeps the client it started on and finishes the turn there (a
+        request in flight on a closed client is a RuntimeError in the person's face); its
+        worker moves it to the new client and closes the old one when the run ends
+        (``MuseService._release_llm``). The old client is closed here only when no turn
+        holds it."""
         old = self.svc.app.llm
         new = self.svc.app.make_llm()
         self.svc.app.llm = new
         for t in self.svc.threads.values():
-            t.agent.llm = new
-        keep_task(asyncio.get_running_loop().create_task(old.close()))
+            if not t.busy:
+                t.agent.llm = new
+        if not any(t.busy and t.agent.llm is old for t in self.svc.threads.values()):
+            keep_task(asyncio.get_running_loop().create_task(old.close()))
         logger.info(
             "model switched to {} @ {}", self.settings.llm.model, self.settings.llm.base_url
         )
@@ -865,10 +886,8 @@ class Connections:
                 self.svc.app.llm.ask([Message.user("Reply with the single word OK.")], tools=None),
                 timeout=45,
             )
-        except TimeoutError:
-            return {"ok": False, "error": "no answer within 45 s"}
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:400]}
+            return _test_failed(exc)
         return {
             "ok": True,
             "reply": (response.content or "").strip()[:200],
@@ -1427,10 +1446,8 @@ class Connections:
             response = await asyncio.wait_for(
                 llm.ask([Message.user("Reply with the single word OK.")], tools=None), timeout=45
             )
-        except TimeoutError:
-            return {"ok": False, "error": "no answer within 45 s"}
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:400]}
+            return _test_failed(exc)
         finally:
             await llm.close()
         return {

@@ -178,6 +178,15 @@ def upstream_detail(kind: str, status: int, model: str, raw: bytes | str) -> str
 CONTENT_CHECK_MARKS = ("data_inspection_failed", "datainspectionfailed", "inappropriate content", "green net")
 
 
+def upstream_event_kind(status: int, raw: bytes | str) -> str:
+    """The event a provider's refusal is kept as: `content.rejected` when its content check
+    declined the words (the provider is fine; the request's words are the matter, and one long
+    conversation can be declined hundreds of times as its client retries), `upstream.error`
+    for everything else. The health page counts the two apart and only the second one is a
+    problem."""
+    return "content.rejected" if status == 400 and content_check_refusal(raw) else "upstream.error"
+
+
 def content_check_refusal(raw: bytes | str) -> bool:
     """True when the provider refused because its content check rejected the words, not
     because anything was wrong with the request — the person needs different words, not a
@@ -269,16 +278,28 @@ def create_app(
             # off the loop: a *notify* rule sends an e-mail, and SMTP may take its whole timeout
             await asyncio.to_thread(cloud.rules_tick)
 
+    async def _video_loop() -> None:
+        # 0.24: clips the app never polled to an end are settled by the relay itself
+        # (settle_video_tasks, below, with the video routes); a bad tick must not end the loop
+        while True:
+            await asyncio.sleep(60)
+            try:
+                await settle_video_tasks()
+            except Exception:
+                log.exception("settle_video_tasks")
+
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         geo.ensure()
         if settings.github_collect:
             collector.start()
         rules_task = asyncio.create_task(_rules_loop(), name="control-rules")
+        video_task = asyncio.create_task(_video_loop(), name="video-settle")
         try:
             yield
         finally:
             rules_task.cancel()
+            video_task.cancel()
             await collector.stop()
             await http.aclose()
 
@@ -706,6 +727,9 @@ def create_app(
     async def chat(request: Request, caller: Caller = Depends(caller_dep)) -> Response:
         body = await _json(request)
         spec = cloud.model_for(str(body.get("model", "")), "chat", caller)
+        # a relay without a key answers before anything is held: a hold taken here and never
+        # settled would count against the account's in-flight limit until it timed out
+        headers = upstream_headers()
         request_id = uuid.uuid4().hex[:16]
         # held at a typical turn's price while it runs; settled when the reply is in
         cloud.check_budget(caller, request_id=request_id, hold_uy=cloud.chat_reserve_uy(spec), place=client_place(request))
@@ -721,7 +745,6 @@ def create_app(
         # provider's abuse tooling can tell accounts apart without knowing them.
         body["user"] = caller.account_id[:32]
         url = settings.upstream_base.rstrip("/") + "/chat/completions"
-        headers = upstream_headers()
         fallback_prompt_tokens = math.ceil(prompt_chars(body.get("messages") or []) / 3)
         # For an account that opted in, the turn is kept once it is answered (service.keep_sample)
         # with the platform and language hints from the headers and, since 0.10, the address
@@ -745,7 +768,11 @@ def create_app(
                     log.warning("upstream error: %s", e)
                     raise CloudError(502, "upstream", "The model provider did not answer") from e
                 if r.status_code >= 400:
-                    cloud.note(caller.account_id, "upstream.error", upstream_detail("chat", r.status_code, spec.id, r.content))
+                    cloud.note(
+                        caller.account_id,
+                        upstream_event_kind(r.status_code, r.content),
+                        upstream_detail("chat", r.status_code, spec.id, r.content),
+                    )
                     return _relay_error(r, request)
                 try:
                     obj = r.json()
@@ -778,7 +805,11 @@ def create_app(
                 async with http.stream("POST", url, headers=headers, content=dumps(body).encode()) as r:
                     if r.status_code >= 400:
                         raw = await r.aread()
-                        cloud.note(caller.account_id, "upstream.error", upstream_detail("chat", r.status_code, spec.id, raw))
+                        cloud.note(
+                            caller.account_id,
+                            upstream_event_kind(r.status_code, raw),
+                            upstream_detail("chat", r.status_code, spec.id, raw),
+                        )
                         failed = True
                         err = relay_error_body(r.status_code, raw)
                         cloud.db.daily_add("error", str(err["error"]["code"]))  # the 200 has left; count it here
@@ -1025,10 +1056,10 @@ def create_app(
         clip_cost = 0 if probe else spec.video_cost_uy(_clip_seconds(body, spec), _clip_resolution(body))
         # reserved while the submission runs; once accepted, the task row holds the clip's
         # price against the allowance (db.pending_video_cost) until the clip is charged
+        headers = upstream_headers()  # before the hold, as for chat: no key, nothing held
         request_id = uuid.uuid4().hex[:16]
         cloud.check_budget(caller, minimum=spec.per_clip, cost_uy=clip_cost, request_id=request_id, place=client_place(request))
         body["model"] = spec.upstream
-        headers = upstream_headers()
         headers["X-DashScope-Async"] = "enable"
         if request.headers.get("x-dashscope-ossresourceresolve"):
             headers["X-DashScope-OssResourceResolve"] = request.headers["x-dashscope-ossresourceresolve"]
@@ -1062,21 +1093,49 @@ def create_app(
         except httpx.HTTPError as e:
             raise CloudError(502, "upstream", "The video provider did not answer") from e
         if r.status_code < 400:
-            try:
-                status = r.json().get("output", {}).get("task_status")
-            except (ValueError, AttributeError):
-                status = None
-            if status and status != task["status"]:
-                cloud.db.set_video_status(task_id, str(status))
-            if status == "SUCCEEDED" and cloud.db.mark_video_charged(task_id):
-                try:
-                    spec = cloud.model_for(str(task["model"]), "video", caller)
-                except CloudError:
-                    spec = None  # a model gone from the menu since the task was submitted
-                if spec is not None:
-                    charged = cloud.charge_video(caller, spec, task_id[:16], cost_uy=int(task["cost_uy"] or 0))
-                    log.info("video task %s done for %s: charged %d", task_id[:12], caller.account_id[:8], charged)
+            charged = cloud.settle_video_task(task, _task_status(r))
+            if charged is not None:
+                log.info("video task %s done for %s: charged %d", task_id[:12], caller.account_id[:8], charged)
         return _dashscope_reply(r)
+
+    def _task_status(r: httpx.Response) -> str | None:
+        try:
+            status = r.json().get("output", {}).get("task_status")
+        except (ValueError, AttributeError):
+            return None
+        return str(status) if status else None
+
+    async def settle_video_tasks(limit: int = 5) -> int:
+        """0.24: the relay asks the provider itself about clips the app never polled to an
+        end: once shortly before the hour's hold on the allowance lapses, once more before
+        the row is purged. A SUCCEEDED answer charges the clip exactly once (the same path
+        as a poll); FAILED or CANCELED lets the hold go; a task the provider no longer knows
+        is marked UNKNOWN. A handful per call. Returns how many tasks were asked about."""
+        if not settings.upstream_key:
+            return 0
+        done = 0
+        for task in cloud.db.video_tasks_to_settle(limit):
+            task_id = str(task["task_id"])
+            try:
+                r = await http.get(settings.dashscope_base.rstrip("/") + f"/tasks/{task_id}", headers=upstream_headers())
+            except httpx.HTTPError as e:
+                log.warning("video task %s: the provider did not answer the relay's check: %s", task_id[:12], e)
+                continue  # not counted as a check: the next tick asks again
+            if r.status_code < 400:
+                status = _task_status(r)
+            elif r.status_code in (400, 404):
+                status = "UNKNOWN"  # the provider keeps a task a day; gone means nothing to charge
+            else:
+                log.warning("video task %s: provider HTTP %s on the relay's check", task_id[:12], r.status_code)
+                continue
+            charged = cloud.settle_video_task(task, status)
+            cloud.db.note_video_check(task_id)
+            done += 1
+            if charged is not None:
+                log.info("video task %s settled by the relay for %s: %s, charged %d", task_id[:12], str(task["account_id"])[:8], status, charged)
+        return done
+
+    app.state.settle_video_tasks = settle_video_tasks  # the tests call it directly
 
     @app.get("/api/v1/uploads")
     async def video_upload_policy(request: Request, caller: Caller = Depends(caller_dep)) -> Response:
@@ -1172,8 +1231,11 @@ def create_app(
     @app.get("/v1/admin/health", dependencies=[Depends(admin_dep)])
     async def admin_health() -> dict:
         """What the self-check timer reads (deploy/nanomuse-hk/selfcheck.sh): aggregates
-        only — requests under way, the hub's counters, the last hour's refusals and upstream
-        errors, the database — never an account. `ok` is false when something needs a look."""
+        only — requests under way, the hub's counters, the last hour's refusals, upstream
+        errors and content-check refusals, the database — never an account. `ok` is false
+        when something needs a look; the provider's content check declining a request's
+        words (`content_rejected`) is counted apart and is never one of the problems, since
+        the provider is answering and only the words are the matter."""
         hub = getattr(app.state, "hub", None)
         t = int(time.time())
         hour = cloud.db.events_since(t - 3600)
@@ -1189,6 +1251,7 @@ def create_app(
             "last_hour": {
                 "requests": cloud.db.requests_since_all(t - 3600),
                 "upstream_errors": upstream_errors,
+                "content_rejected": int(hour.get("content.rejected", 0)),
                 "budget_refused": int(hour.get("budget.refused", 0)),
                 "sign_ins": int(hour.get("sign_in.code", 0)) + int(hour.get("sign_in.password", 0)),
                 "sign_in_failures": int(hour.get("sign_in.failed", 0)),

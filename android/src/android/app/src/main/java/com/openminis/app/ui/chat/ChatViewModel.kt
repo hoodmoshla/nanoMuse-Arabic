@@ -167,6 +167,10 @@ class ChatViewModel(
          */
         internal fun shouldSplitOnError(error: Throwable): Boolean {
             if (error is CancellationException) return false
+            // nanoMuse: a content check saying no (the relay's `content_rejected`, a provider's
+            // `DataInspectionFailed`) is about the words, not the size; halving sends the same
+            // words twice, and one long chat was refused two hundred times in an hour that way.
+            if (error is LLMError.ProviderError && io.github.nanomuse.cloud.RelayRefusal.contentCheck(error.detail)) return false
             if (error is LLMError) {
                 return when (error) {
                     // Never worth a smaller payload:
@@ -5326,7 +5330,7 @@ class ChatViewModel(
 
         val initialProvider = currentProvider
         if (initialProvider == null) {
-            _error.value = "No provider configured"
+            _error.value = context.getString(R.string.nm_chat_no_model) // nanoMuse: where to fix it, in the person's language
             return false
         }
         _canResume.value = false
@@ -5492,7 +5496,7 @@ class ChatViewModel(
 
         val initialProvider = currentProvider
         if (initialProvider == null) {
-            _error.value = "No provider configured"
+            _error.value = context.getString(R.string.nm_chat_no_model) // nanoMuse: where to fix it, in the person's language
             return
         }
         val provider: LLMProvider = initialProvider
@@ -6922,7 +6926,7 @@ class ChatViewModel(
 
         val initialProvider = currentProvider
         if (initialProvider == null) {
-            _error.value = "No provider configured"
+            _error.value = context.getString(R.string.nm_chat_no_model) // nanoMuse: where to fix it, in the person's language
             return
         }
         var provider: LLMProvider = initialProvider
@@ -12286,7 +12290,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
     fun resume() {
         if (_isStreaming.value || !_canResume.value) return
         val provider = currentProvider ?: run {
-            _error.value = "No provider configured"
+            _error.value = context.getString(R.string.nm_chat_no_model) // nanoMuse: where to fix it, in the person's language
             return
         }
         _canResume.value = false
