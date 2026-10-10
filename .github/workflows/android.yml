@@ -72,6 +72,14 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
+      # nanoMuse-Arabic: the Arabic resources, before the half hour of native building. A key
+      # that went missing from values-ar/strings.xml, a placeholder that drifted out of a
+      # translation, a Persian letter from the wrong keyboard — fifteen seconds here beats
+      # discovering it on a phone. python3 is on the runner and the checker is stdlib-only;
+      # tests/test_arabic_resources.py covers the checker itself in the Python job.
+      - name: Arabic resources
+        run: python3 scripts/check-arabic-resources.py
+
       - name: Native artifacts (proot, Alpine rootfs, rclone.aar)
         env:
           GOTOOLCHAIN: auto
@@ -100,9 +108,21 @@ jobs:
           bt="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
           "$bt/aapt" dump badging android/src/android/app/build/outputs/apk/debug/app-debug.apk | grep -E "^package:|application-label:|native-code"
 
+      # nanoMuse-Arabic: the unit-test report, kept even when the tests are what failed — that
+      # is the run whose report is worth having. `if-no-files-found: warn` because a build that
+      # fell over before the tests ran has nothing to upload, which is not a second failure.
+      - name: Unit test report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nanoMuse-Arabic-android-test-report
+          path: android/src/android/app/build/reports/tests/
+          retention-days: 14
+          if-no-files-found: warn
+
       - uses: actions/upload-artifact@v7
         with:
-          name: nanoMuse-debug-apk
+          name: nanoMuse-Arabic-debug-apk
           path: android/src/android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 14
           if-no-files-found: error

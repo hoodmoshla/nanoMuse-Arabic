@@ -8,6 +8,8 @@ What it changes, and only this:
 - The places that hard-code the package id (shortcuts, the accessibility service id).
 - The product name: "Minis" -> "nanoMuse" in the 17 strings.xml and in Kotlin string
   literals (never in identifiers, paths such as /var/minis, or MinisSkills).
+- The label the standalone Arabic edition shows (LABEL, below): app_name in every
+  strings.xml, so a phone with both apps tells them apart.
 - The Soul defaults (agent name and header emoji).
 - Links: update source, GitHub repository, issues, privacy policy.
 - Colours: the iOS blues and the teal Material scheme -> the brand palette (docs/brand.md).
@@ -18,7 +20,7 @@ What it changes, and only this:
 - A handful of first-run / notification strings reworded in nanoMuse's voice
   (COPY below, en + zh + zh-rTW; the other locales keep the upstream text).
 
-- iOS (android/src/ios, when present): the bundle ids (com.openminis.app* → io.github.nanomuse.app*,
+- iOS (android/src/ios, when present): the bundle ids (com.openminis.app* → io.github.nanomuse.arabic*,
   including the app group and iCloud container), the display names, MARKETING_VERSION /
   CURRENT_PROJECT_VERSION, "Minis" -> "nanoMuse" in Swift string literals and in
   Localizable.xcstrings (keys renamed, every translation updated), the About links, the
@@ -40,16 +42,28 @@ ANDROID = ROOT / "android" / "src" / "android"
 APP = ANDROID / "app"
 MAIN = APP / "src" / "main"
 JAVA = MAIN / "java" / "com" / "openminis" / "app"
+# nanoMuse's own tree, where the Arabic edition's identity and update source live.
+NM_JAVA = MAIN / "java" / "io" / "github" / "nanomuse"
 RES = MAIN / "res"
 IOS = ROOT / "android" / "src" / "ios"
 
-APP_ID = "io.github.nanomuse.app"
+# nanoMuse-Arabic: the standalone Arabic edition. It installs BESIDE the official
+# app, so it carries an application id, a launcher label and a release feed of its
+# own; the Kotlin package and the Gradle namespace stay com.openminis.app, as
+# CONTRIBUTING.md asks, so upstream merges keep landing.
+APP_ID = "io.github.nanomuse.arabic"
 NAME = "nanoMuse"
+LABEL = "nanoMuse-Arabic"
 VERSION_NAME = "0.1.41"
 VERSION_CODE = 42
-REPO = "nano-muse/nanoMuse"
+# This edition's repository: the update check reads it and the About rows link to
+# it. Never upstream's — that feed carries the English app, signed with a key this
+# build does not share.
+REPO = "hoodmoshla/nanoMuse-Arabic"
 REPO_URL = f"https://github.com/{REPO}"
-PRIVACY_URL = f"{REPO_URL}/blob/main/docs/privacy.md"
+# Upstream, for attribution only (the source this edition is built on).
+UPSTREAM_URL = "https://github.com/nano-muse/nanoMuse"
+PRIVACY_URL = f"{UPSTREAM_URL}/blob/main/docs/privacy.md"
 
 # X-Minis-Token is a protocol header; MinisSkills is a path. The tail is an ASCII
 # lookahead rather than \b so that "Minis가" (Korean particle) is still caught.
@@ -129,14 +143,33 @@ def soul_defaults() -> None:
 
 
 def links() -> None:
+    owner, repo_name = REPO.split("/")
     edit(
         JAVA / "data" / "UpdateChecker.kt",
         [
-            (r'private const val OWNER = "[^"]+"', 'private const val OWNER = "nano-muse"'),
-            (r'private const val REPO = "[^"]+"', 'private const val REPO = "nanoMuse"'),
+            (r'private const val OWNER = "[^"]+"', f'private const val OWNER = "{owner}"'),
+            (r'private const val REPO = "[^"]+"', f'private const val REPO = "{repo_name}"'),
             (
                 r'const val RELEASES_URL: String = "[^"]+"',
                 f'const val RELEASES_URL: String = "{REPO_URL}/releases"',
+            ),
+        ],
+    )
+    # nanoMuse-Arabic: the Version row's source. Upstream's download index
+    # (nanomuse.cn) and the GitHub feed it falls back to both carry the ENGLISH
+    # app, signed with a key this build does not share, so the row must read this
+    # edition's releases only — and say so plainly while it has none.
+    edit(
+        NM_JAVA / "community" / "UpdateCheck.kt",
+        [
+            (r'[ \t]*const val INDEX_URL: String = "[^"]+"\n', ""),
+            (
+                r'const val DOWNLOAD_URL = "[^"]+"',
+                f'const val DOWNLOAD_URL = "{REPO_URL}/releases"',
+            ),
+            (
+                r'const val GITHUB_LATEST_URL = "[^"]+"',
+                f'const val GITHUB_LATEST_URL = "https://api.github.com/repos/{REPO}/releases/latest"',
             ),
         ],
     )
@@ -150,9 +183,26 @@ def links() -> None:
         JAVA / "ui" / "settings" / "SettingsScreen.kt",
         [
             (r'"https://openminis\.github\.io/privacy-policy\.html"', f'"{PRIVACY_URL}"'),
-            (r'"https://github\.com/OpenMinis/OpenMinis/issues/new"', f'"{REPO_URL}/issues/new"'),
+            (r'"https://github\.com/OpenMinis/OpenMinis/issues/new"', f'{REPO_URL}/issues/new"'),
         ],
     )
+
+
+def arabic_edition() -> None:
+    """nanoMuse-Arabic: the label the launcher, the task switcher and the
+    notifications show.
+
+    The product name itself stays nanoMuse: it is what the strings, the docs and
+    the agent's own voice call this thing. The label is what tells the two apps
+    apart on a phone that has both, which is the whole point of a standalone
+    edition. One line per locale, and only that line — the rest of upstream's
+    strings.xml is not ours to edit.
+    """
+    for path in sorted(RES.glob("values*/strings.xml")):
+        edit(
+            path,
+            [(r'(<string name="app_name">)[^<]+(</string>)', rf"\g<1>{LABEL}\g<2>")],
+        )
 
 
 # (pattern, replacement); applied to Theme.kt only.
@@ -514,8 +564,31 @@ def ios_check() -> int:
 
 def check() -> int:
     problems = 0
+    # nanoMuse-Arabic: the identity this edition lives by. The application id in
+    # Gradle and in shortcuts.xml must be APP_ID and the label must be LABEL — a
+    # miss here is what makes the two apps collide on the same phone, or makes the
+    # Arabic one silently update itself to the English one.
+    if f'applicationId = "{APP_ID}"' not in (APP / "build.gradle.kts").read_text(encoding="utf-8"):
+        print(f"  ! applicationId is not {APP_ID} in app/build.gradle.kts")
+        problems += 1
+    shortcuts = (RES / "xml" / "shortcuts.xml").read_text(encoding="utf-8")
+    if f'android:targetPackage="{APP_ID}"' not in shortcuts:
+        print(f"  ! shortcuts.xml does not target {APP_ID}")
+        problems += 1
+    if (NM_JAVA / "community" / "UpdateCheck.kt").exists():
+        feed = (NM_JAVA / "community" / "UpdateCheck.kt").read_text(encoding="utf-8")
+        if REPO not in feed:
+            print(f"  ! UpdateCheck.kt does not read {REPO}")
+            problems += 1
+        if "nanomuse.cn" in feed or "nano-muse/nanoMuse" in feed:
+            print("  ! UpdateCheck.kt still points at upstream's release feed")
+            problems += 1
     for path in sorted(RES.glob("values*/strings.xml")):
-        if WORD.search(path.read_text(encoding="utf-8")):
+        text = path.read_text(encoding="utf-8")
+        if f'<string name="app_name">{LABEL}</string>' not in text:
+            print(f"  ! app_name is not {LABEL} in {path.relative_to(ROOT)}")
+            problems += 1
+        if WORD.search(text):
             print(f"  ! Minis left in {path.relative_to(ROOT)}")
             problems += 1
     leftovers = re.compile(
@@ -534,6 +607,7 @@ def main() -> int:
         sys.exit(f"{APP} not found")
     gradle()
     package_ids()
+    arabic_edition()
     product_name()
     soul_defaults()
     links()

@@ -1,0 +1,84 @@
+name: Upstream
+
+# nanoMuse-Arabic follows nano-muse/nanoMuse. This job only LOOKS, once a week and on demand:
+# how far behind we are, which strings upstream added that Arabic will owe, and whether upstream
+# has meanwhile shipped an Arabic locale of its own. It writes the report into the run's summary,
+# keeps it as an artifact, and opens ONE issue while there is something to do — reopening nothing
+# and closing nothing.
+#
+# It never merges, never pushes and never publishes. The sync is a hand decision with a review:
+# see ARABIC-EDITION.md. There is no `pull_request_target`, no write to contents, and the only
+# token this needs beyond reading is `issues: write` for the one notification.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays, 06:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: upstream-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  gap:
+    name: how far behind upstream
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Only the commits and trees, no blobs: the report reads a handful of files through
+      # `git show`, and a blobless fetch of a monorepo this size takes seconds instead of minutes.
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/nano-muse/nanoMuse
+          git fetch --no-tags --filter=blob:none upstream main
+
+      - name: The gap
+        id: gap
+        run: |
+          set -o pipefail
+          python3 scripts/upstream-gap.py --theirs upstream/main --out upstream-gap.md
+          cat upstream-gap.md >> "$GITHUB_STEP_SUMMARY"
+          behind="$(git rev-list --count HEAD..upstream/main)"
+          echo "behind=$behind" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: upstream-gap
+          path: upstream-gap.md
+          retention-days: 30
+          if-no-files-found: error
+
+      # One issue, not one per run: the title carries the number so a change in the gap opens a
+      # new one, and an open issue on the current number is left alone.
+      - name: Open an issue while there is a merge to review
+        if: steps.gap.outputs.behind != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          title="Upstream is ${{ steps.gap.outputs.behind }} commits ahead"
+          if gh issue list --state open --search "\"$title\" in:title" --json title --jq '.[].title' | grep -Fxq "$title"; then
+            echo "already open: $title"
+            exit 0
+          fi
+          {
+            echo "nano-muse/nanoMuse is **${{ steps.gap.outputs.behind }} commit(s) ahead** of this branch."
+            echo
+            echo "The full report is on the [run summary](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) and in the \`upstream-gap\` artifact."
+            echo
+            cat upstream-gap.md
+            echo
+            echo "---"
+            echo
+            echo "Nothing merges on its own. The steps are in ARABIC-EDITION.md, and the strings"
+            echo "Arabic will owe are in the table above."
+          } > issue.md
+          gh issue create --title "$title" --body-file issue.md

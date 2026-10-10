@@ -229,4 +229,4 @@ keytool -genkeypair -keystore ~/.nanomuse-release/nanomuse.jks -alias nanomuse \
 | `ui/coding/` | 你电脑上的编程助手 |
 | `connectors/`、`ui/connectors/` | 连接器目录（`ConnectorsCatalogue` 读取资源文件）、MCP 授权发现与注册（`McpAuthDiscovery`）、连接和令牌刷新（`Connectors`）、这台手机连接了什么并发布到 profile、其他设备连接了什么（`SharedConnectors`）、「设置 → 连接器」页面 |
 | `ui/cloud/` | 登录、账号屏、设备部分 |
-| `res/values*/nm_strings.xml` | nanoMuse 的全部字符串，App 支持的十七种语言各一份（英语、简体中文、繁體中文、德语、西班牙语、菲律宾语、法语、印尼语、日语、韩语、马来语、波兰语、巴西葡萄牙语、罗马尼亚语、俄语、泰语、土耳其语）；每个文件的键相同，缺的回落到英语 |
+| `res/values*/nm_strings.xml` | nanoMuse 的全部字符串，App 支持的十八种语言各一份（英语、简体中文、繁體中文、**العربية**、德语、西班牙语、菲律宾语、法语、印尼语、日语、韩语、马来语、波兰语、巴西葡萄牙语、罗马尼亚语、俄语、泰语、土耳其语）；每个文件的键相同，缺的回落到英语。`values-ar/strings.xml` 另存上游字符串的阿拉伯语版本，由 `ArabicStringsParityTest` 与 `scripts/check-arabic-resources.py` 按同一规则守着 |

@@ -59,14 +59,14 @@
     <string name="nm_naming_custom">شيء آخر…</string>
     <string name="nm_naming_placeholder">اكتب اسمًا هنا</string>
     <string-array name="nm_name_suggestions">
-        <item>Pip</item>
-        <item>Wren</item>
-        <item>Juno</item>
-        <item>Remy</item>
-        <item>Tilly</item>
-        <item>Milo</item>
-        <item>Sol</item>
-        <item>Fig</item>
+        <item>نور</item>
+        <item>ريم</item>
+        <item>جنى</item>
+        <item>سهى</item>
+        <item>سما</item>
+        <item>لمى</item>
+        <item>مها</item>
+        <item>تالا</item>
     </string-array>
 
     <!-- Home: the four tabs (Muse's shape) -->
@@ -263,7 +263,7 @@
     <string name="nm_feed_part_afternoon">بعد الظهر</string>
     <string name="nm_feed_part_evening">المساء</string>
     <string-array name="nm_weekdays">
-        <item>Monday</item><item>Tuesday</item><item>Wednesday</item><item>Thursday</item><item>Friday</item><item>Saturday</item><item>Sunday</item>
+        <item>الاثنين</item><item>الثلاثاء</item><item>الأربعاء</item><item>الخميس</item><item>الجمعة</item><item>السبت</item><item>الأحد</item>
     </string-array>
     <string name="nm_time_just_now">قبل قليل</string>
     <string name="nm_time_yesterday">أمس</string>
