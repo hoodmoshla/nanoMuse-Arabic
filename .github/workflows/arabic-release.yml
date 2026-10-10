@@ -77,6 +77,19 @@ jobs:
           submodules: recursive # android/deps/proot, the sandbox inside the APK
           fetch-depth: 0 # the tag is created from this checkout and points at it
 
+      # The branch named above is the edition's; if it is ever stale the run should say so in the
+      # first seconds and name the variable, not fail inside Gradle twenty minutes later.
+      - name: The branch that carries this edition
+        run: |
+          set -euo pipefail
+          if [ ! -f scripts/arabic-release-apk.sh ]; then
+            echo "::error::this checkout has no scripts/arabic-release-apk.sh"
+            echo "ARABIC_BRANCH is '${ARABIC_BRANCH:-unset}' — point it at the branch that carries"
+            echo "the Arabic edition (its own ARABIC_BRANCH in this file, or main once it lives there)."
+            exit 1
+          fi
+          echo "building ${GITHUB_REF_NAME} from ARABIC_BRANCH=${ARABIC_BRANCH:-unset}"
+
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
