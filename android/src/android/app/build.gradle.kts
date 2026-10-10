@@ -146,7 +146,7 @@ android {
     }
 
     androidResources {
-        noCompress += listOf("tar.gz", "proot-aarch64")
+        noCompress += listOf("gz", "proot-aarch64")
     }
 
     testOptions {
