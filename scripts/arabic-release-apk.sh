@@ -46,6 +46,9 @@ case "$revision" in ''|*[!0-9]*) echo "--revision must be a positive integer, go
 gradle_file="$NM_GRADLE_DIR/app/build.gradle.kts"
 [ -f "$gradle_file" ] || { echo "not found: $gradle_file" >&2; exit 1; }
 
+APP_ID="$(sed -nE 's/.*applicationId = "([^"]+)".*/\1/p' "$gradle_file" | head -1)"
+[ -n "$APP_ID" ] || { echo "no applicationId in $gradle_file" >&2; exit 1; }
+
 # ---- the two numbers ---------------------------------------------------------
 # The base is read back from the file, so this is idempotent: a file a previous run already
 # wrote (`1.0.1.2` / `44002`) yields the same base as a fresh upstream tree (`1.0.1` / `44`).
@@ -117,6 +120,50 @@ if echo "$certs" | grep -q "CN=Android Debug" && [ "$allow_debug" = 0 ]; then
   echo "signed with the debug key — android/keystore-arabic.properties is missing or unreadable" >&2
   exit 1
 fi
+
+# ---- it is this app, at this version, with its sandbox inside ------------------
+# A release that installs and then fails on the first shell command is worse than one that fails
+# to build, because the phone is where you find out. The badging is read back rather than assumed,
+# and the native payload is listed: the Linux sandbox is proot plus two ELF loaders, the hands and
+# the editor need the JNI libraries, and the backup destinations are a Go library that only exists
+# as a .so. A packaging regression shows up here, not on someone's phone.
+badging="$("$build_tools/aapt" dump badging "$apk")"
+case "$badging" in
+  *"name='$APP_ID'"*) echo "== package $APP_ID" ;;
+  *)
+    echo "the APK is not the standalone Arabic edition:" >&2
+    grep -m1 '^package:' <<<"$badging" >&2 || true
+    exit 1
+    ;;
+esac
+grep -q "versionName='$version_name'" <<<"$badging" || { echo "the APK is not $version_name" >&2; exit 1; }
+grep -q "versionCode='$version_code'" <<<"$badging" || { echo "the APK is not versionCode $version_code" >&2; exit 1; }
+
+entries="$(unzip -l "$apk" | awk 'NF >= 4 { print $4 }')"
+missing=""
+for entry in \
+  lib/arm64-v8a/libproot-loader.so \
+  lib/arm64-v8a/libproot-loader32.so \
+  lib/arm64-v8a/libpty_bridge.so \
+  lib/arm64-v8a/libjieba_jni.so \
+  assets/proot-aarch64 \
+  assets/alpine-minirootfs.tar.gz
+do
+  grep -Fxq "$entry" <<<"$entries" || missing="$missing $entry"
+done
+if [ -n "$missing" ]; then
+  echo "the release APK is missing:$missing" >&2
+  echo "the sandbox cannot start without those, and the app would install and then fail." >&2
+  exit 1
+fi
+libs="$(grep -c '^lib/arm64-v8a/.*\.so$' <<<"$entries" || true)"
+if [ "${libs:-0}" -lt 6 ]; then
+  echo "only ${libs:-0} native libraries are packaged; the sandbox and the JNI code need at least" >&2
+  echo "six (two proot loaders, pty_bridge, jieba_jni, the rclone binding, the VAD payload)." >&2
+  exit 1
+fi
+echo "== $libs native libraries, $(grep -c '^assets/' <<<"$entries" || true) assets"
+grep '^lib/arm64-v8a/.*\.so$' <<<"$entries" | sed 's/^/     /'
 
 fingerprint="$(sed -nE 's/.*Signer #1 certificate SHA-256 digest: ([0-9a-fA-F]+).*/\1/p' <<<"$certs" | head -1 | tr 'A-F' 'a-f')"
 [ -n "$fingerprint" ] || { echo "could not read the signing certificate" >&2; exit 1; }

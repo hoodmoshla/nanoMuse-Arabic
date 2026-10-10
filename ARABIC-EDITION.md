@@ -144,35 +144,52 @@ revision would be called and writes nothing.
 
 ### One-time setup, then one button
 
-Four repository secrets, set once (`Settings → Secrets and variables → Actions`):
+Copy this whole block once, on the machine that will keep the key. It creates the key, sets the
+two secrets the workflow reads, and pins the certificate's fingerprint — after it, every release
+is one command.
 
 ```sh
-base64 -w0 /path/to/nanomuse-arabic-release.jks | gh secret set ARABIC_KEYSTORE_BASE64
-gh secret set ARABIC_KEYSTORE_PASSWORD   # the store password you chose with keytool
-gh secret set ARABIC_KEY_ALIAS           # nanomuse-arabic
-gh secret set ARABIC_KEY_PASSWORD        # the key password you chose with keytool
+# 1. The key. Made ONCE and never again: a release signed with a different key cannot install
+#    over the last one. Keep two backups of the .jks file next to the fingerprint printed below.
+keytool -genkeypair -v -keystore ~/nanomuse-arabic-release.jks \
+  -alias nanomuse-arabic -keyalg RSA -keysize 4096 -validity 10000 -storetype PKCS12
+
+# 2. The two secrets. The alias is `nanomuse-arabic` and PKCS12 keeps one password for the store
+#    and the key, so the workflow needs nothing else.
+base64 -w0 ~/nanomuse-arabic-release.jks | gh secret set ARABIC_KEYSTORE_BASE64
+gh secret set ARABIC_KEYSTORE_PASSWORD          # the password you just chose
+
+# 3. The fingerprint, pinned on purpose. It is public information (it ships inside every APK), it
+#    lives in a repository variable so no commit is needed, and every later release is measured
+#    against it.
+gh variable set ARABIC_CERT_SHA256 --body "$(keytool -list -v -keystore ~/nanomuse-arabic-release.jks \
+  | sed -nE 's/.*SHA256: //p' | tr -d ':' | tr 'A-F' 'a-f')"
 ```
 
-And the fingerprint of that key, pinned on purpose — in `android/arabic-cert.sha256` (it is
-public information: it ships inside every APK) or as the repository variable
-`ARABIC_CERT_SHA256`:
+Run it with `bash`, not `sh`, and answer the two password prompts. `gh` needs to be signed in to
+this repository (`gh auth status`).
+
+**Then, for this release:**
 
 ```sh
-keytool -list -v -keystore /path/to/nanomuse-arabic-release.jks -alias nanomuse-arabic | grep SHA256
-printf '%s\n' <the 64 hex characters> > android/arabic-cert.sha256
+gh workflow run "Arabic release" -f revision=1 -f publish=true
 ```
 
-Until it is pinned, a release build stops **after** signing and prints the fingerprint instead of
-publishing. That is deliberate: an APK under a key nobody chose can never install over the copies
-already on people's phones, and a build that "just works" with a new key is the failure this
-pipeline exists to prevent.
+`revision=1` builds `nanoMuse-Arabic-1.0.1.1-arm64.apk` at `versionCode 44001`; the next release is
+`revision=2`, and so on. Add `--repo hoodmoshla/nanoMuse-Arabic` if you are not in the clone. This
+is the same as **Actions → Arabic release → Run workflow**.
 
-Then **Actions → Arabic release → Run workflow**, with the next revision:
+Until the fingerprint is pinned, a release build stops **after** signing and prints the fingerprint
+instead of publishing. That is deliberate: an APK under a key nobody chose can never install over
+the copies already on people's phones, and a build that "just works" with a new key is the failure
+this pipeline exists to prevent.
 
 | the run refuses to publish when | because |
 |---|---|
 | a secret is missing | it stops before the build, naming which one |
 | the Arabic checks or the unit tests fail | the steps are sequential |
+| the APK's package is not `io.github.nanomuse.arabic`, or its version is not the one being released | a release under the wrong identity is somebody else's app |
+| a native payload is missing (`libproot-loader.so`, `libpty_bridge.so`, the Alpine rootfs …) | it would install and then fail on the first shell command |
 | the APK is signed with the debug key | `android/keystore-arabic.properties` was not read |
 | the signature is not the pinned one | the key is not this edition's permanent key |
 | the revision does not beat the version in the file | an update that is not newer is not an update |

@@ -9,11 +9,14 @@ name: Arabic release
 #   a person merges it             → then dispatches this workflow with the next revision
 #
 # Nothing here runs on a push, and it can publish nothing unless all of this holds:
-#   * the four keystore secrets are set (otherwise it stops before the build starts),
+#   * the keystore secrets are set (otherwise it stops before the build starts),
 #   * the Arabic checks and the unit tests pass (the steps are sequential: a failure ends the job),
-#   * the APK is signed with the key pinned in android/arabic-cert.sha256, and not with the debug
-#     key — a run against an unpinned or different key stops after the build, printing the
-#     fingerprint, because an APK under another key can never update an installed copy.
+#   * the built APK is this edition's application id, at the version its tag will carry, with its
+#     native payload inside,
+#   * the APK is signed with the key pinned as ARABIC_CERT_SHA256 (or in
+#     android/arabic-cert.sha256) and not with the debug key — a run against an unpinned or
+#     different key stops after the build, printing the fingerprint, because an APK under another
+#     key can never update the copies already on people's phones.
 
 on:
   workflow_dispatch:
@@ -68,7 +71,11 @@ jobs:
 
       # The key is written here and nowhere else: a base64 blob in a secret, a file under
       # $RUNNER_TEMP that the runner throws away, and a properties file the build reads. No
-      # secret is ever echoed; the two that could reach a log line are masked first.
+      # secret is ever echoed; the one that could reach a log line is masked first.
+      #
+      # Two secrets are enough. PKCS12 keeps a single password for the store and the key, and the
+      # alias is the one the setup command in ARABIC-EDITION.md uses; ARABIC_KEY_ALIAS and
+      # ARABIC_KEY_PASSWORD exist only for a key made another way.
       - name: The Arabic signing key
         env:
           KEYSTORE_B64: ${{ secrets.ARABIC_KEYSTORE_BASE64 }}
@@ -78,26 +85,33 @@ jobs:
         run: |
           set -euo pipefail
           missing=""
-          for name in ARABIC_KEYSTORE_BASE64 ARABIC_KEYSTORE_PASSWORD ARABIC_KEY_ALIAS ARABIC_KEY_PASSWORD; do
-            [ -n "${!name:-}" ] || missing="$missing $name"
-          done
+          [ -n "${KEYSTORE_B64:-}" ] || missing="$missing ARABIC_KEYSTORE_BASE64"
+          [ -n "${STORE_PASSWORD:-}" ] || missing="$missing ARABIC_KEYSTORE_PASSWORD"
           if [ -n "$missing" ]; then
             echo "::error::the signing key of this edition is not configured:$missing"
-            echo "See ARABIC-EDITION.md for the four secrets and the one-time keytool command."
-            echo "Until they are set, no signed APK can be produced — and a debug-signed one is not a release."
+            echo "ARABIC-EDITION.md has the one-time setup: create the key, then"
+            echo "  base64 -w0 nanomuse-arabic-release.jks | gh secret set ARABIC_KEYSTORE_BASE64"
+            echo "  gh secret set ARABIC_KEYSTORE_PASSWORD"
+            echo "Until that is done no signed APK can exist, and a debug-signed one is not a release."
             exit 1
           fi
+          alias="${KEY_ALIAS:-nanomuse-arabic}"
+          key_password="${KEY_PASSWORD:-$STORE_PASSWORD}"
           echo "::add-mask::$STORE_PASSWORD"
-          echo "::add-mask::$KEY_PASSWORD"
+          echo "::add-mask::$key_password"
           umask 077
           printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/nanomuse-arabic-release.jks"
-          cat > android/keystore-arabic.properties <<EOF
-          storeFile=$RUNNER_TEMP/nanomuse-arabic-release.jks
-          storePassword=$STORE_PASSWORD
-          keyAlias=$KEY_ALIAS
-          keyPassword=$KEY_PASSWORD
-          EOF
-          echo "the key is in place: $(keytool -list -keystore "$RUNNER_TEMP/nanomuse-arabic-release.jks" -storepass "$STORE_PASSWORD" | grep -c 'PrivateKeyEntry') private key entr(ies)"
+          printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$RUNNER_TEMP/nanomuse-arabic-release.jks" "$STORE_PASSWORD" "$alias" "$key_password" \
+            > android/keystore-arabic.properties
+          entries="$(keytool -list -keystore "$RUNNER_TEMP/nanomuse-arabic-release.jks" \
+            -storepass "$STORE_PASSWORD" -alias "$alias" 2>/dev/null | grep -c 'PrivateKeyEntry' || true)"
+          [ "${entries:-0}" -ge 1 ] || {
+            echo "::error::the keystore has no private key under the alias '$alias'"
+            echo "Set ARABIC_KEY_ALIAS if the key was created with another alias."
+            exit 1
+          }
+          echo "the key is in place: alias $alias, one private key entry"
 
       # One invocation for both modes: the script owns the version arithmetic, the checks, the
       # build, the signature pin and the release. --revision is the only input that matters.
