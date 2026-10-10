@@ -80,6 +80,17 @@ jobs:
       - name: Arabic resources
         run: python3 scripts/check-arabic-resources.py
 
+      # Every Kotlin source, compiled before anything expensive. Gradle's own message for a
+      # Kotlin failure is the six words "Compilation error. See log for more details" with the
+      # file and line in the compiler's output far above it, and the APK job takes half an hour
+      # to reach this point from a cold cache; here the same error surfaces in three minutes,
+      # with the units' sources too, which `assembleDebug` never compiles.
+      - name: Kotlin compiles
+        working-directory: android/src/android
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$NDK_VERSION"
+          ./gradlew :app:compileDebugKotlin :app:compileDebugUnitTestKotlin --console=plain --no-daemon
+
       - name: Native artifacts (proot, Alpine rootfs, rclone.aar)
         env:
           GOTOOLCHAIN: auto
