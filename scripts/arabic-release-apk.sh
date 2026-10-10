@@ -170,11 +170,14 @@ for entry in \
   lib/arm64-v8a/libproot-loader32.so \
   lib/arm64-v8a/libpty_bridge.so \
   lib/arm64-v8a/libjieba_jni.so \
-  assets/proot-aarch64 \
-  assets/alpine-minirootfs.tar.gz
+  assets/proot-aarch64
 do
   grep -Fxq "$entry" <<<"$entries" || missing="$missing $entry"
 done
+if ! grep -Fxq 'assets/alpine-minirootfs.tar.gz' <<<"$entries" &&
+   ! grep -Fxq 'assets/alpine-minirootfs.tar' <<<"$entries"; then
+  missing="$missing assets/alpine-minirootfs.tar.gz (or assets/alpine-minirootfs.tar)"
+fi
 if [ -n "$missing" ]; then
   echo "the release APK is missing:$missing" >&2
   echo "APK assets:" >&2
