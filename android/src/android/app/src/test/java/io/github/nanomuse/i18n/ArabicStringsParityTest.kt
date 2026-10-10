@@ -24,8 +24,26 @@ import java.io.File
  */
 class ArabicStringsParityTest {
 
-    private val res: File = listOf("src/main/res", "app/src/main/res").map(::File).first { it.isDirectory }
-    private val app: File = generateSequence(res) { it.parentFile }.first { File(it, "build.gradle.kts").isFile }
+    /**
+     * The app module directory, and the resources under it.
+     *
+     * Gradle runs a unit test with the *module's* directory as the working directory (`app/`), an
+     * IDE with the project's (`android/src/android`). Walking up from the resources to find a
+     * marker looks natural and is wrong: `res` is then the relative path `src/main/res`, whose
+     * `parentFile` chain is `src/main`, `src`, and then **null** — a relative path with one
+     * component has no parent — so the walk never reaches the directory it is looking for and
+     * every test in this class dies in its constructor with `Sequence contains no element
+     * matching the predicate`. That is exactly how this failed on CI while passing on a machine
+     * that ran it from the project directory.
+     *
+     * `src/main/AndroidManifest.xml` is what tells the two directories apart: the project
+     * directory has a `build.gradle.kts` of its own, so that cannot be the marker, and only the
+     * module has the manifest at that path.
+     */
+    private val app: File = listOf(".", "app", "../..").map(::File).first {
+        File(it, "src/main/AndroidManifest.xml").isFile
+    }
+    private val res: File = File(app, "src/main/res")
     private val english = File(res, "values/strings.xml")
     private val arabic = File(res, "values-ar/strings.xml")
     private val englishNaming = File(res, "values/nm_strings.xml")
