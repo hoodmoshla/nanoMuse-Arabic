@@ -122,9 +122,81 @@ refuses it with `INSTALL_FAILED_UPDATE_INCOMPATIBLE` after the download and the 
 so the mismatch is caught first, logged, and shown as one plain sentence.
 
 **There is no release yet.** Until one is published, the update row says so, and that is the
-correct answer rather than a fabricated one.
+correct answer rather than a fabricated one. `## Releases` below is the pipeline that changes it.
 
 ---
+
+## Releases, and the numbers in them
+
+The Arabic edition carries a version of its own, and it has no dash in it:
+
+```
+versionName  = <the upstream versionName in build.gradle.kts> . <revision>   →  1.0.1.1, 1.0.1.2
+versionCode  = <the upstream versionCode> * 1000 + <revision>               →  44001, 44002
+```
+
+The dash matters. `UpdateChecker.normalizeTag` cuts a version at its first `-`, because that is
+how upstream sorts `1.2.3-rc1` below `1.2.3`; a version spelled `1.0.1-ar.1`, and the tag for it,
+would both read back as `1.0.1` — equal to the installed build — and the update would never
+appear in the app. A numeric fourth component survives that untouched and still compares greater
+than the base it sits on. `scripts/arabic-release-apk.sh --check-only --revision N` prints what a
+revision would be called and writes nothing.
+
+### One-time setup, then one button
+
+Four repository secrets, set once (`Settings → Secrets and variables → Actions`):
+
+```sh
+base64 -w0 /path/to/nanomuse-arabic-release.jks | gh secret set ARABIC_KEYSTORE_BASE64
+gh secret set ARABIC_KEYSTORE_PASSWORD   # the store password you chose with keytool
+gh secret set ARABIC_KEY_ALIAS           # nanomuse-arabic
+gh secret set ARABIC_KEY_PASSWORD        # the key password you chose with keytool
+```
+
+And the fingerprint of that key, pinned on purpose — in `android/arabic-cert.sha256` (it is
+public information: it ships inside every APK) or as the repository variable
+`ARABIC_CERT_SHA256`:
+
+```sh
+keytool -list -v -keystore /path/to/nanomuse-arabic-release.jks -alias nanomuse-arabic | grep SHA256
+printf '%s\n' <the 64 hex characters> > android/arabic-cert.sha256
+```
+
+Until it is pinned, a release build stops **after** signing and prints the fingerprint instead of
+publishing. That is deliberate: an APK under a key nobody chose can never install over the copies
+already on people's phones, and a build that "just works" with a new key is the failure this
+pipeline exists to prevent.
+
+Then **Actions → Arabic release → Run workflow**, with the next revision:
+
+| the run refuses to publish when | because |
+|---|---|
+| a secret is missing | it stops before the build, naming which one |
+| the Arabic checks or the unit tests fail | the steps are sequential |
+| the APK is signed with the debug key | `android/keystore-arabic.properties` was not read |
+| the signature is not the pinned one | the key is not this edition's permanent key |
+| the revision does not beat the version in the file | an update that is not newer is not an update |
+
+It publishes `v<versionName>` marked **Latest** with `nanoMuse-Arabic-<versionName>-arm64.apk` and
+its `.sha256`. Latest matters: `/releases/latest` is what the Version row reads, and a prerelease
+is excluded from it by GitHub.
+
+### What the app then does
+
+`Settings → About → the Version row` reads
+`api.github.com/repos/hoodmoshla/nanoMuse-Arabic/releases/latest`, compares the tag with its own
+`versionName`, and offers *Update* when the tag is newer. `App Update` under it reads the release
+list and can download and install the APK itself. Two things make the install work, and both are
+checked before publishing:
+
+- **the application id never moves** (`io.github.nanomuse.arabic`), so it is an update of the same
+  app and not a second copy;
+- **the signing key never moves** (the pinned fingerprint), which is what Android demands before
+  it will replace an installed app — and it is what keeps the person's data.
+
+A downloaded APK is additionally checked on the phone, in
+`io.github.nanomuse.update.ApkSignerIdentity`: whatever the feed answered with, nothing reaches
+the system installer unless its certificate is this app's.
 
 ## Following upstream
 
@@ -134,8 +206,13 @@ git fetch upstream main
 python3 scripts/upstream-gap.py                                 # what changed, what Arabic owes
 ```
 
-`.github/workflows/upstream.yml` runs the same report weekly and opens one issue while there is a
-merge to review. It never merges, never pushes and never publishes.
+`.github/workflows/upstream.yml` runs that report weekly, and — when upstream publishes a
+**release** we do not have — fetches the tag, merges it into `upstream/<tag>`, lists the conflicts
+and the files of ours it touches, and opens one pull request. It never merges the Arabic branch,
+never pushes upstream and never publishes. The pull request is where the build happens:
+`android.yml` runs on it, builds the debug APK and runs the unit tests, `ArabicStringsParityTest`
+and `NmStringsParityTest` among them, so a merge that brought new strings and no Arabic for them
+fails there rather than on a phone.
 
 The merge itself is done by hand, on a branch, in this order:
 
