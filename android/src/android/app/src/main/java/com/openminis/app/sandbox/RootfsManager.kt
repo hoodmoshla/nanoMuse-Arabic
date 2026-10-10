@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import java.io.BufferedInputStream
 import java.io.File
 import java.io.FilterInputStream
 import java.io.InputStream
@@ -108,12 +109,21 @@ class RootfsManager private constructor(private val context: Context) {
                 val progressStream = ProgressInputStream(rawAsset, assetTotal) { fraction ->
                     _installState.value = RootfsInstallState.Extracting(fraction)
                 }
-                if (assetName.endsWith(".gz")) {
-                    GZIPInputStream(progressStream).use { gzipStream ->
+                // nanoMuse-Arabic: the name and the bytes can disagree, and the two magic bytes
+                // decide rather than the suffix. aapt2 unpacks a `.gz` asset on the way into the
+                // APK — which is why the two names above are tried at all — so a build can hand
+                // over a `alpine-minirootfs.tar.gz` whose contents are already a tar, and the
+                // suffix would then send this into GZIPInputStream and fail on the first command.
+                val peek = BufferedInputStream(progressStream, 4096)
+                peek.mark(2)
+                val gzipped = peek.read() == 0x1f && peek.read() == 0x8b
+                peek.reset()
+                if (gzipped) {
+                    GZIPInputStream(peek).use { gzipStream ->
                         extractTar(gzipStream, rootfsDir)
                     }
                 } else {
-                    extractTar(progressStream, rootfsDir)
+                    extractTar(peek, rootfsDir)
                 }
             }
 

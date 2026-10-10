@@ -146,7 +146,13 @@ android {
     }
 
     androidResources {
-        noCompress += listOf("gz", "proot-aarch64")
+        // nanoMuse-Arabic: upstream's line, restored. It reads "gz" here for a while, on the
+        // theory that aapt2 was renaming the Alpine asset; it does not — aapt2 unpacks a `.gz`
+        // asset and the app reads whichever of `alpine-minirootfs.tar.gz` and `.tar` it finds
+        // (RootfsManager), and the check in scripts/arabic-release-apk.sh now verifies those bytes
+        // rather than the name. What "gz" did do was tell aapt2 not to compress an asset it had
+        // already unpacked, which is how a ~100 MB tar ends up stored raw inside the APK.
+        noCompress += listOf("tar.gz", "proot-aarch64")
     }
 
     testOptions {
