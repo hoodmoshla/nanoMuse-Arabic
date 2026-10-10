@@ -162,7 +162,8 @@ echo "== label: $label"
 }
 grep -E '^(sdkVersion|targetSdkVersion|native-code)' <<<"$badging" | sed 's/^/     /' || true
 
-entries="$(unzip -l "$apk" | awk 'NF >= 4 { print $4 }')"
+# Read exact ZIP entry paths from the central directory.
+entries="$(unzip -Z1 "$apk")"
 missing=""
 for entry in \
   lib/arm64-v8a/libproot-loader.so \
@@ -176,6 +177,12 @@ do
 done
 if [ -n "$missing" ]; then
   echo "the release APK is missing:$missing" >&2
+  echo "APK assets:" >&2
+  unzip -Z1 "$apk" | grep '^assets/' | head -200 >&2 || true
+  echo "Merged asset files:" >&2
+  find "$NM_GRADLE_DIR/app/build/intermediates/merged_assets" -type f \
+    \( -name 'alpine-minirootfs.tar.gz' -o -name 'proot-aarch64' \) \
+    -printf '%p (%s bytes)\n' 2>/dev/null >&2 || true
   echo "the sandbox cannot start without those, and the app would install and then fail." >&2
   exit 1
 fi
