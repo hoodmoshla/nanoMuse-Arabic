@@ -54,7 +54,10 @@ def _parse(module, path: Path):
 def _write(directory: Path, body: str) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / "strings.xml"
-    path.write_text(f'<?xml version="1.0" encoding="utf-8"?>\n<resources>\n{body}\n</resources>\n')
+    path.write_text(
+        f'<?xml version="1.0" encoding="utf-8"?>\n<resources>\n{body}\n</resources>\n',
+        encoding="utf-8",
+    )
     return path
 
 
@@ -201,7 +204,9 @@ def test_english_left_in_one_item_of_an_array_is_an_error(checker, tmp_path):
             tmp_path / "values-ar", AR_OK.replace("<item>الثلاثاء</item>", "<item>Tuesday</item>")
         ),
     )
-    checker.check_copy(ar, (tmp_path / "values-ar" / "strings.xml").read_text(), "values-ar")
+    checker.check_copy(
+        ar, (tmp_path / "values-ar" / "strings.xml").read_text(encoding="utf-8"), "values-ar"
+    )
     assert any("days" in problem for problem in checker.problems)
     checker.check_keys(en, ar, "values-ar/strings.xml")
     assert checker.problems
@@ -209,25 +214,33 @@ def test_english_left_in_one_item_of_an_array_is_an_error(checker, tmp_path):
 
 def test_a_persian_letter_is_an_error(checker, tmp_path):
     ar = _parse(checker, _write(tmp_path / "values-ar", AR_OK.replace("ملف", "فايل\u06cc")))
-    checker.check_copy(ar, (tmp_path / "values-ar" / "strings.xml").read_text(), "values-ar")
+    checker.check_copy(
+        ar, (tmp_path / "values-ar" / "strings.xml").read_text(encoding="utf-8"), "values-ar"
+    )
     assert any("Persian" in problem for problem in checker.problems)
 
 
 def test_an_empty_value_is_an_error(checker, tmp_path):
     ar = _parse(checker, _write(tmp_path / "values-ar", AR_OK.replace("مرحبًا %1$s", "")))
-    checker.check_copy(ar, (tmp_path / "values-ar" / "strings.xml").read_text(), "values-ar")
+    checker.check_copy(
+        ar, (tmp_path / "values-ar" / "strings.xml").read_text(encoding="utf-8"), "values-ar"
+    )
     assert any("empty" in problem for problem in checker.problems)
 
 
 def test_an_exclamation_mark_is_an_error(checker, tmp_path):
     ar = _parse(checker, _write(tmp_path / "values-ar", AR_OK.replace("ملف", "ملف!")))
-    checker.check_copy(ar, (tmp_path / "values-ar" / "strings.xml").read_text(), "values-ar")
+    checker.check_copy(
+        ar, (tmp_path / "values-ar" / "strings.xml").read_text(encoding="utf-8"), "values-ar"
+    )
     assert any("exclamation" in problem for problem in checker.problems)
 
 
 def test_an_em_dash_is_an_error(checker, tmp_path):
     ar = _parse(checker, _write(tmp_path / "values-ar", AR_OK.replace("ملف", "ملف \u2014 ملف")))
-    checker.check_copy(ar, (tmp_path / "values-ar" / "strings.xml").read_text(), "values-ar")
+    checker.check_copy(
+        ar, (tmp_path / "values-ar" / "strings.xml").read_text(encoding="utf-8"), "values-ar"
+    )
     assert any("em dash" in problem for problem in checker.problems)
 
 
@@ -246,7 +259,7 @@ def test_an_invalid_resource_name_is_an_error(checker, tmp_path):
 def test_malformed_xml_is_an_error(checker, tmp_path):
     path = tmp_path / "values-ar" / "strings.xml"
     path.parent.mkdir(parents=True)
-    path.write_text("<resources><string name='a'>unclosed</resources>")
+    path.write_text("<resources><string name='a'>unclosed</resources>", encoding="utf-8")
     resources, errors = checker.parse_resources(path)
     assert resources is None
     assert any("well-formed" in error for error in errors), errors
