@@ -145,6 +145,54 @@ jobs:
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$NDK_VERSION"
           ./gradlew :app:testDebugUnitTest --tests 'io.github.nanomuse.*' --console=plain --no-daemon
 
+      # Gradle's own message for a test failure names the HTML report and nothing else, and that
+      # report is an artifact somebody has to download and open. The XML Gradle wrote beside it has
+      # the class, the test, the message and the stack; this prints them into the log, where the
+      # failure is read the first time. `if: always()` because this is the step that matters most
+      # when the one above failed.
+      - name: Which tests failed
+        if: always()
+        run: |
+          set -euo pipefail
+          dir=android/src/android/app/build/test-results/testDebugUnitTest
+          if [ ! -d "$dir" ]; then
+            echo "no test results yet at $dir"
+            exit 0
+          fi
+          python3 - "$dir" <<'PY'
+          import pathlib, sys, xml.etree.ElementTree as ET
+          directory = pathlib.Path(sys.argv[1])
+          files = sorted(directory.glob("*.xml"))
+          total = failures = errors = skipped = 0
+          bad = []
+          for f in files:
+              try:
+                  root = ET.parse(f).getroot()
+              except ET.ParseError as exc:
+                  print(f"{f.name}: unreadable ({exc})")
+                  continue
+              total += int(root.get("tests", 0))
+              failures += int(root.get("failures", 0))
+              errors += int(root.get("errors", 0))
+              skipped += int(root.get("skipped", 0))
+              for case in root.iter("testcase"):
+                  for kind in ("failure", "error"):
+                      node = case.find(kind)
+                      if node is None:
+                          continue
+                      bad.append((case.get("classname"), case.get("name"), node.get("message"), (node.text or "").strip()))
+          print(f"{len(files)} class file(s), {total} test(s): {failures} failed, {errors} errored, {skipped} skipped")
+          for cls, name, message, stack in bad:
+              print("::error::" + f"{cls}.{name}: {(message or '').splitlines()[0][:300]}")
+              print(f"\n--- {cls}.{name}")
+              print(f"    {(message or '').splitlines()[0][:400] if message else '(no message)'}")
+              for line in stack.splitlines()[:12]:
+                  print("    " + line)
+              print()
+          if bad:
+              sys.exit(1)
+          PY
+
       - name: Badging
         run: |
           bt="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
@@ -153,12 +201,16 @@ jobs:
       # nanoMuse-Arabic: the unit-test report, kept even when the tests are what failed — that
       # is the run whose report is worth having. `if-no-files-found: warn` because a build that
       # fell over before the tests ran has nothing to upload, which is not a second failure.
+      # Kept whether or not the tests passed, and that is the whole point: the XML beside the HTML
+      # is what says which test failed and why, and it is written even when the run dies.
       - name: Unit test report
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: nanoMuse-Arabic-android-test-report
-          path: android/src/android/app/build/reports/tests/
+          path: |
+            android/src/android/app/build/reports/tests/
+            android/src/android/app/build/test-results/
           retention-days: 14
           if-no-files-found: warn
 
