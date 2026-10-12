@@ -126,6 +126,7 @@ BARE = f"SHA-256: {DIGEST}\n"
         ("bare", BARE),
     ],
 )
+@needs_bash
 def test_the_reader_takes_the_digest_from_every_shape_apksigner_prints(
     name: str, text: str
 ) -> None:
