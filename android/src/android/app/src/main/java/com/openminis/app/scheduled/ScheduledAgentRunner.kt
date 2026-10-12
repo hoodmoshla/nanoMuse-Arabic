@@ -9,7 +9,7 @@ import com.openminis.app.MinisApp
 import com.openminis.app.R // nanoMuse
 import com.openminis.app.debug.HeadlessChatRunner
 import com.openminis.app.logging.AppLogger
-import com.openminis.app.service.AgentForegroundService
+import com.openminis.app.service.SessionActivityTracker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -98,15 +98,19 @@ object ScheduledAgentRunner {
             return null
         }
 
-        // Kick the FGS so the agent loop survives Doze / screen-off. The
-        // existing service is idempotent and reused by chat UI; we pass a
-        // generic status string so it shows up in the ongoing notification.
-        AgentForegroundService.startService(
-            context = app,
-            sessionCount = 1,
-            toolStatus = "Scheduled: ${task.label.ifBlank { "task" }}",
+        // nanoMuse-Arabic: the foreground service belongs to SessionActivityTracker, which starts
+        // it while there is work and stops it when there is none (see
+        // io.github.nanomuse.service.ForegroundServicePolicy). A scheduled run registers itself as
+        // work the moment it is accepted — before the session is resolved — so the process survives
+        // Doze from here to the end of the run, including the fire-and-forget path below.
+        val pendingId = "scheduled:${task.id}"
+        var handedToBackground = false
+        SessionActivityTracker.setPending(
+            pendingId,
+            true,
+            "Scheduled: ${task.label.ifBlank { "task" }}",
         )
-
+        try {
         val sessionId = withContext(Dispatchers.IO) {
             resolveSessionId(app, task)
         } ?: return null
@@ -132,14 +136,24 @@ object ScheduledAgentRunner {
         // finishes), and return the session id immediately so the UI can show
         // "task started" without blocking on the agent loop. Leaving the editor
         // can't cancel it because bgScope outlives the screen.
+        handedToBackground = true
         bgScope.launch {
-            val result = dispatch(app, task, sessionId, wait = true)
-            val preview = (result.responseText ?: "").take(200).ifBlank { "(no response)" }
-            val ok = result.status != "Error" && result.status != "Timeout"
-            ScheduledTaskManager(app).markFired(task.id, sessionId, preview, ok = ok)
-            postCompletionNotification(app, task, sessionId, preview)
+            try {
+                val result = dispatch(app, task, sessionId, wait = true)
+                val preview = (result.responseText ?: "").take(200).ifBlank { "(no response)" }
+                val ok = result.status != "Error" && result.status != "Timeout"
+                ScheduledTaskManager(app).markFired(task.id, sessionId, preview, ok = ok)
+                postCompletionNotification(app, task, sessionId, preview)
+            } finally {
+                // The run owns the registration once it is on the background scope, so the service
+                // is kept until the last thing it does, not until this function returns.
+                SessionActivityTracker.setPending(pendingId, false)
+            }
         }
         return sessionId
+        } finally {
+            if (!handedToBackground) SessionActivityTracker.setPending(pendingId, false)
+        }
     }
 
     /**

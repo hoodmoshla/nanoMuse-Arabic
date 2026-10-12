@@ -20,7 +20,7 @@ import com.openminis.app.logging.AppLogger
 import com.openminis.app.sandbox.PRootKernel
 import io.github.nanomuse.sandbox.SandboxPaths
 import com.openminis.app.sandbox.ShellExecutor
-import com.openminis.app.service.AgentForegroundService
+import com.openminis.app.service.SessionActivityTracker
 import io.github.nanomuse.guard.GateOutcome
 import io.github.nanomuse.guard.GuardKind
 import io.github.nanomuse.guard.RiskAssessment
@@ -295,7 +295,16 @@ object HubActions {
         val sessionId = runBlocking { sessionFor(app, conversation, call.senderName) }
         if (sessionId == null) { call.fail("no_model", "the phone has no model to think with; sign in to nanoMuse Cloud there"); return }
         call.event(JSONObject().put("stage", "thinking").put("session", sessionId))
-        AgentForegroundService.startService(app, sessionCount = 1, toolStatus = context.getString(R.string.nm_hub_task_from, call.senderName))
+        // nanoMuse-Arabic: a task from another device is work, and the work — not the UI — is what
+        // keeps the process alive. It is registered with the tracker, which owns the foreground
+        // service (io.github.nanomuse.service.ForegroundServicePolicy), so a local UI with nothing
+        // to do cannot stop the service while this phone is thinking for someone else's.
+        val pendingId = "hub:${call.id}"
+        SessionActivityTracker.setPending(
+            pendingId,
+            true,
+            context.getString(R.string.nm_hub_task_from, call.senderName),
+        )
         val prompt = if (call.senderKind == "web") text else context.getString(R.string.nm_hub_task_prefix, call.senderName) + "\n\n" + text
         val relay = relayApprovals(context, call, sessionId)
         running.started(call.id, senderId, conversation, sessionId)
@@ -305,6 +314,7 @@ object HubActions {
                 HeadlessChatRunner.prompt(context = app, sessionId = sessionId, text = prompt, attachments = emptyList(), thinkingLevel = null, wait = true, timeoutMs = TASK_TIMEOUT_MS)
             }
         } finally {
+            SessionActivityTracker.setPending(pendingId, false)
             relay.cancel()
             stopped = running.finished(call.id)
         }

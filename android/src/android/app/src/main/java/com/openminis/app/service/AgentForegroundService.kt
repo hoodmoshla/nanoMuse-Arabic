@@ -242,7 +242,12 @@ class AgentForegroundService : Service() {
             startForeground(NOTIFICATION_ID, notification)
         }
 
-        return START_STICKY
+        // nanoMuse-Arabic: NOT_STICKY, deliberately. A sticky service is restarted by the system
+        // after the process is killed — with a null intent and nothing to do — and the revival path
+        // above exists only to unwind that. The tracker now owns when this service exists: it starts
+        // it when work appears and stops it when the last task settles, and it can start it again
+        // from a cold process. There is nothing to revive.
+        return START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -313,6 +318,14 @@ class AgentForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        // nanoMuse-Arabic: the permanent row must go with the service. stopForeground(REMOVE) is
+        // what the framework uses, but on some OEM builds a row survives a service that was stopped
+        // while it was not the foreground one, so the notification is cancelled explicitly too.
+        runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
+        runCatching {
+            (getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager)
+                ?.cancel(NOTIFICATION_ID)
+        }
         releaseWakeLock()
         try {
             overlayController?.hide()
