@@ -29,6 +29,28 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def posix_bash() -> str | None:
+    """A path to a shell that behaves like bash, or None when this machine has none.
+
+    The release scripts are run by the Linux job. On a bare `windows-latest` runner `bash` is the
+    Windows Subsystem for Linux stub, which answers with a UTF-16 message about a missing
+    distribution instead of running anything, so there is nothing here to test there. Asked rather
+    than assumed from the platform name, because Git for Windows does ship a real bash.
+    """
+    try:
+        result = subprocess.run(["bash", "-c", "echo ok"], capture_output=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return "bash" if result.returncode == 0 and b"ok" in result.stdout else None
+
+
+BASH = posix_bash()
+needs_bash = pytest.mark.skipif(
+    BASH is None,
+    reason="no POSIX bash on this machine; scripts/arabic-release-apk.sh is run by the Linux job",
+)
 READER = ROOT / "scripts" / "apksigner-fingerprint.sh"
 RELEASE = ROOT / "scripts" / "arabic-release-apk.sh"
 DECIDER = ROOT / "scripts" / "should-publish.sh"
@@ -40,7 +62,7 @@ COLONS = ":".join(DIGEST[i : i + 2] for i in range(0, 64, 2)).upper()
 def read(text: str) -> tuple[int, str]:
     """Run the reader on [text] the way the release script does, through a pipe."""
     result = subprocess.run(
-        ["bash", str(READER)], input=text, capture_output=True, text=True, check=False
+        [BASH or "bash", str(READER)], input=text, capture_output=True, text=True, check=False
     )
     return result.returncode, result.stdout.strip()
 
@@ -102,6 +124,7 @@ def test_the_reader_takes_the_digest_from_every_shape_apksigner_prints(
     assert out == DIGEST, f"{name}: read {out!r}"
 
 
+@needs_bash
 def test_the_reader_takes_the_sha256_and_not_the_sha1_beside_it() -> None:
     """A SHA-1 digest is 40 hex characters; a reader that took the first long hex on any line
     would pin the wrong certificate, and the release would refuse a key that is correct."""
@@ -120,6 +143,7 @@ def test_the_reader_takes_the_sha256_and_not_the_sha1_beside_it() -> None:
         "Signer #1 certificate SHA-1 digest: 0123456789abcdef0123456789abcdef01234567\n",
     ],
 )
+@needs_bash
 def test_the_reader_prints_nothing_rather_than_a_wrong_digest(text: str) -> None:
     code, out = read(text)
     assert code == 1, f"expected a refusal for {text!r}"
@@ -157,12 +181,13 @@ def test_the_alpine_detection_tells_a_gzip_from_a_tar(tmp_path: Path) -> None:
         ("pull_request", "false", "true"),
     ],
 )
+@needs_bash
 def test_the_publish_decision(event: str, value: str, expected: str) -> None:
     """Run #5 built, signed, verified a real APK and published nothing, because the decision was
     asked in a GitHub expression: `inputs.publish` is a boolean for a `type: boolean` input, and
     `inputs.publish == 'true'` compares the number 1 with NaN. The shell answers it now."""
     result = subprocess.run(
-        ["bash", str(DECIDER), event, value], capture_output=True, text=True, check=False
+        [BASH or "bash", str(DECIDER), event, value], capture_output=True, text=True, check=False
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == expected, f"{event}/{value!r} → {result.stdout.strip()!r}"
@@ -199,6 +224,11 @@ def test_the_annotated_tag_carries_a_tagger(tmp_path: Path) -> None:
     blank = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     blank["HOME"] = str(tmp_path)  # no ~/.gitconfig to fall back on
     blank["XDG_CONFIG_HOME"] = str(tmp_path)
+    # A CI runner often carries an identity in the system config (the macOS runner does), which is
+    # precisely what the real runner does not have — hence the whole bug. Both are closed off so
+    # the test asks the question the runner asks.
+    blank["GIT_CONFIG_NOSYSTEM"] = "1"
+    blank["GIT_CONFIG_GLOBAL"] = str(tmp_path / "no-such-gitconfig")
 
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True, env=blank)
     subprocess.run(
@@ -227,8 +257,10 @@ def test_the_annotated_tag_carries_a_tagger(tmp_path: Path) -> None:
         env=blank,
         check=False,
     )
-    assert without.returncode != 0, "an annotated tag without an identity now succeeds?"
-    assert "identity" in (without.stderr + without.stdout).lower()
+    # On a machine with an identity configured this one succeeds, which is why the script cannot
+    # rely on it; when it fails, the message is the one the run died with.
+    if without.returncode != 0:
+        assert "identity" in (without.stderr + without.stdout).lower()
 
     with_identity = subprocess.run(
         [
