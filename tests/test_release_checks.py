@@ -22,8 +22,8 @@ from __future__ import annotations
 import gzip
 import io
 import os
-import sys
 import subprocess
+import sys
 import tarfile
 from pathlib import Path
 
