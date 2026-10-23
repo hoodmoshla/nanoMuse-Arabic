@@ -165,6 +165,13 @@ jobs:
           set -euo pipefail
           args=()
           if [ -n "${{ inputs.revision }}" ]; then args+=(--revision "${{ inputs.revision }}"); fi
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            echo "::notice::a pull_request event never publishes, even when the publish input is true"
+            echo "event=$EVENT_NAME publish input='${PUBLISH_INPUT:-<unset>}' → publish=false"
+            echo "running: scripts/arabic-release-apk.sh ${args[*]:-(no arguments)}"
+            bash scripts/arabic-release-apk.sh "${args[@]}"
+            exit 0
+          fi
           # Asked in bash rather than in an expression: `inputs.publish` is a boolean, and
           # comparing it with the string 'true' compared the number 1 with NaN. See
           # scripts/should-publish.sh for the whole of it.
