@@ -54,7 +54,7 @@ env:
   # branch was dispatched: the Actions page remembers the last one somebody picked, and a run
   # started from `main` would otherwise build that tree, find no scripts/arabic-release-apk.sh and
   # stop — or worse, find an older one.
-  ARABIC_BRANCH: codex/arabic-standalone-phase2
+  ARABIC_BRANCH: update/v1.0.5-arabic
 
 jobs:
   release:
