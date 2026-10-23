@@ -26,19 +26,9 @@ name: Arabic verify
 #     merges it → signed release → the app offers it.
 
 on:
-  workflow_dispatch:
-    inputs:
-      revision:
-        description: "The Arabic revision of this base (1 → 1.0.1.1). Empty = the next one"
-        required: false
-        default: ""
-      publish:
-        description: "Create the tag and the GitHub release (uncheck to only build and verify)"
-        type: boolean
-        default: false
   pull_request:
-    types: [closed]
-    branches: ["does-not-match-this-verify-run"]
+    types: [opened, synchronize, reopened]
+    branches: ["main"]
 
 concurrency:
   group: arabic-verify
