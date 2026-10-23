@@ -625,7 +625,6 @@
     <string name="nm_welcome_skip">تخطي الآن</string>
     <string name="nm_welcome_hands_fine_print">كل ما عدا ذلك يعمل دون هذه الميّزات. تجدها تحت الإعدادات → Hands متى شئت.</string>
     <string name="nm_welcome_meet_fine_print">قبل أي إجراء لا يمكن التراجع عنه (حذف، إرسال، دفع) يتوقف ويسألك أولًا.</string>
-    <string name="nm_cloud_title">سحابة nanoMuse</string>
     <string name="nm_cloud_signin_title">ابدأ مع nanoMuse السحابة</string>
     <string name="nm_cloud_signin_subtitle">رمز يُرسل إلى هاتفك أو إلى صندوق الوارد، أو كلمة المرور الخاصة بك إذا قمت بتعيينها.</string>
     <string name="nm_cloud_mode_code">باستخدام رمز</string>
@@ -642,7 +641,6 @@
     <!-- Your own relay (0.1.38): the sign-in screen's server form and the account page's row -->
     <string name="nm_cloud_other_server">استخدم خادمًا مختلفًا</string>
     <string name="nm_cloud_server_url">عنوان المرسل</string>
-    <string name="nm_cloud_server_hint">مثال: https://relay.example.org</string>
     <string name="nm_cloud_server_check">تحقق</string>
     <string name="nm_cloud_server_use">استخدم هذا الخادم</string>
     <string name="nm_cloud_server_now">الخادم: %1$s</string>

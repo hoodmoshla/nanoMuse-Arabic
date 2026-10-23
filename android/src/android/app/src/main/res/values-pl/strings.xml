@@ -55,6 +55,8 @@
     <string name="check_update_install_launch_failed">Nie udało się uruchomić instalatora. Sprawdź uprawnienie „instaluj nieznane aplikacje” lub otwórz pobrany plik APK ręcznie.</string>
     <string name="check_update_install_hint">Wskazówka: jeśli instalacja nie daje żadnej reakcji, podpisy mogą się nie zgadzać — najpierw odinstaluj poprzednią wersję, a potem pobierz ponownie.</string>
     <string name="check_update_open_install_settings">Otwórz ustawienia</string>
+    <string name="check_update_digest_mismatch">Pobrany plik nie zgadza się z opublikowanym SHA-256, więc nie został zainstalowany.</string>
+    <string name="check_update_view_release">Zobacz aktualizację</string>
     <string name="permissions_title">Uprawnienia</string>
     <string name="permissions_reset_all">Zresetuj wszystko</string>
     <string name="permissions_reset_dialog_title">Zresetować wszystkie uprawnienia?</string>

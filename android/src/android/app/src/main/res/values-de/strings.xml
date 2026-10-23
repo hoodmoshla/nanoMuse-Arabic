@@ -55,6 +55,8 @@
     <string name="check_update_install_launch_failed">Installer konnte nicht gestartet werden. Prüfe die Berechtigung \"Apps aus unbekannten Quellen installieren\" oder öffne das heruntergeladene APK manuell.</string>
     <string name="check_update_install_hint">Tipp: Wenn die Installation keinerlei Rückmeldung gibt, stimmt möglicherweise die Signatur nicht — deinstalliere zuerst die vorherige Version und lade dann erneut herunter.</string>
     <string name="check_update_open_install_settings">Einstellungen öffnen</string>
+    <string name="check_update_digest_mismatch">Die heruntergeladene Datei stimmt nicht mit dem veröffentlichten SHA-256 überein und wurde nicht installiert.</string>
+    <string name="check_update_view_release">Update ansehen</string>
     <string name="permissions_title">Berechtigungen</string>
     <string name="permissions_reset_all">Alles zurücksetzen</string>
     <string name="permissions_reset_dialog_title">Alle Berechtigungen zurücksetzen?</string>

@@ -56,6 +56,8 @@
     <string name="check_update_install_launch_failed">無法啟動安裝程式。請檢查「安裝不明應用程式」權限，或手動開啟下載的 APK。</string>
     <string name="check_update_install_hint">提示：若安裝時沒有任何回應，可能是簽章不符——請先解除安裝舊版本，再重新下載。</string>
     <string name="check_update_open_install_settings">開啟設定</string>
+    <string name="check_update_digest_mismatch">下載的檔案與已發布的 SHA-256 不一致，因此未安裝。</string>
+    <string name="check_update_view_release">查看更新</string>
     <string name="permissions_title">權限</string>
     <string name="permissions_reset_all">全部重設</string>
     <string name="permissions_reset_dialog_title">重設所有權限？</string>

@@ -60,6 +60,8 @@
     <string name="check_update_install_launch_failed">Gagal membuka pemasang. Periksa izin \"pasang aplikasi tidak dikenal\" atau buka APK yang telah diunduh secara manual.</string>
     <string name="check_update_install_hint">Tips: Jika pemasangan tidak memberi respons, tanda tangan aplikasi mungkin tidak cocok — copot versi sebelumnya terlebih dahulu, lalu unduh ulang.</string>
     <string name="check_update_open_install_settings">Buka Pengaturan</string>
+    <string name="check_update_digest_mismatch">File yang diunduh tidak cocok dengan SHA-256 yang diterbitkan, jadi tidak dipasang.</string>
+    <string name="check_update_view_release">Lihat pembaruan</string>
     <string name="permissions_title">Izin</string>
     <string name="permissions_reset_all">Atur Ulang Semua</string>
     <string name="permissions_reset_dialog_title">Atur Ulang Semua Izin?</string>

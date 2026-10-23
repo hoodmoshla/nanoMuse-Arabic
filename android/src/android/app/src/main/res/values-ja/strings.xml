@@ -55,6 +55,8 @@
     <string name="check_update_install_launch_failed">インストーラーの起動に失敗しました。\"提供元不明のアプリ\"の許可を確認するか、ダウンロードした APK を手動で開いてください。</string>
     <string name="check_update_install_hint">ヒント：インストール時に何も反応がない場合、署名が一致しない可能性があります。まず以前のバージョンをアンインストールしてから再度ダウンロードしてください。</string>
     <string name="check_update_open_install_settings">設定を開く</string>
+    <string name="check_update_digest_mismatch">ダウンロードしたファイルが公開された SHA-256 と一致しないため、インストールしませんでした。</string>
+    <string name="check_update_view_release">更新を見る</string>
     <string name="permissions_title">アクセス許可</string>
     <string name="permissions_reset_all">すべてリセット</string>
     <string name="permissions_reset_dialog_title">すべての権限をリセットしますか？</string>

@@ -55,6 +55,8 @@
     <string name="check_update_install_launch_failed">Nu s-a putut deschide programul de instalare. Verifică permisiunea „instalează aplicații necunoscute” sau deschide manual fișierul APK descărcat.</string>
     <string name="check_update_install_hint">Sfat: dacă instalarea nu dă niciun răspuns, semnătura poate să nu corespundă — dezinstalează mai întâi versiunea anterioară, apoi descarcă din nou.</string>
     <string name="check_update_open_install_settings">Deschide setările</string>
+    <string name="check_update_digest_mismatch">Fișierul descărcat nu corespunde cu SHA-256 publicat, așa că nu a fost instalat.</string>
+    <string name="check_update_view_release">Vezi actualizarea</string>
     <string name="permissions_title">Permisiuni</string>
     <string name="permissions_reset_all">Resetează tot</string>
     <string name="permissions_reset_dialog_title">Resetezi toate permisiunile?</string>
