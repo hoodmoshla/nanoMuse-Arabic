@@ -224,7 +224,8 @@ def test_the_workflow_asks_that_script_and_shows_what_it_decided() -> None:
     )
     assert "github.ref == 'refs/heads/main'" in text, "a dispatch can publish from another branch"
     assert "ref: main" in text, "the release checkout can build a pull request commit"
-    assert "github.sha" not in text, "the release checkout follows the event commit"
+    commands = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+    assert "github.sha" not in commands, "the release checkout follows the event commit"
     # The summary must read the value the build actually used, not the input again, or it can
     # report a publication that did not happen.
     assert "steps.release.outputs.publish" in text
