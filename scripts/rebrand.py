@@ -663,8 +663,7 @@ def check() -> int:
         # A mention inside a comment explaining why the feed is ours is fine;
         # an actual URL or repo path in code is the update reading the wrong app.
         feed_code = "\n".join(
-            line for line in feed.splitlines()
-            if not line.lstrip().startswith(("*", "//"))
+            line for line in feed.splitlines() if not line.lstrip().startswith(("*", "//"))
         )
         if "nanomuse.cn" in feed_code or "nano-muse/nanoMuse" in feed_code:
             print("  ! UpdateCheck.kt still points at upstream's release feed")
