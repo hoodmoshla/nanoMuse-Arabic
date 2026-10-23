@@ -409,6 +409,8 @@ export interface CloudConfig {
   privacy_url?: string;
   repo_url?: string;
   improve_default?: boolean;
+  /** Relay policy; absent on older relays, whose minimum was eight. */
+  password_min_len?: number;
 }
 
 /** `/api/cloud/me`: the account as the relay sees it. */
@@ -785,11 +787,11 @@ export interface MemoryItem {
   updated_at?: string;
 }
 
-/** One entry of the memory log: a tidy-up merge or drop, or an update the agent made. Undoable. */
+/** One entry of the memory log: a tidy-up merge or drop, a forget, or an update the agent made. Undoable. */
 export interface MemoryChange {
   id: string;
   at: string;
-  action: "merge" | "rewrite" | "drop";
+  action: "merge" | "rewrite" | "drop" | "forget";
   before: MemoryItem[];
   after: MemoryItem | null;
   reason: string;
@@ -1052,7 +1054,7 @@ export interface ConnectionsData {
     status: string;
   };
   search: {
-    provider: "duckduckgo" | "brave" | "tavily" | "you" | "searxng";
+    provider: "duckduckgo" | "brave" | "tavily" | "serply" | "you" | "searxng";
     /** SearXNG instance */
     base_url: string;
     key_source: "none" | "vault" | "config" | "missing";
@@ -1364,13 +1366,13 @@ export interface UpcomingData {
   busy: boolean;
 }
 
-export type TriggerKind = "mail" | "event" | "hook";
+export type TriggerKind = "mail" | "event" | "hook" | "device";
 export type TriggerStatus = "active" | "cancelled";
 
 export interface Trigger {
   id: string;
   kind: TriggerKind;
-  /** Words that must all appear in the sender/subject (mail) or title/place (event); a hook's name. */
+  /** Words that must all appear in the sender/subject (mail), title/place (event) or the device's name and kind (device); a hook's name. */
   match: string;
   /** What to do when it fires. */
   text: string;
@@ -1389,7 +1391,7 @@ export interface Trigger {
 
 export interface TriggersData {
   items: Trigger[];
-  /** Which kinds have their connector: mail needs the mailbox, event the calendar. */
+  /** Which kinds have their connector: mail needs the mailbox, event the calendar, device this computer being on the hub. */
   available: Record<TriggerKind, boolean>;
   /** When the inbox was last looked at for mail triggers (ISO), and the last error if any. */
   mail_checked_at: string | null;

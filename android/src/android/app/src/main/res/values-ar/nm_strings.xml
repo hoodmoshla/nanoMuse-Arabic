@@ -338,6 +338,16 @@
     <string name="nm_avatar_retry">إعادة المحاولة</string>
     <string name="nm_avatar_describe_title">وصف وجه جديد</string>
     <string name="nm_avatar_describe_body">جملة واحدة تكفي: ما هو، ماذا يرتدي، كيف يبدو. اختر أسلوبًا، ونموذج الصور الخاص بك يرسم أربعة للاختيار من بينها.</string>
+    <string name="nm_avatar_preset_moss_name">ساعي الطحلب</string>
+    <string name="nm_avatar_preset_moss_description">ساعٍ صغير مغطى بالطحلب، بأذنين ورقيتين وحقيبة قماشية بلا علامات</string>
+    <string name="nm_avatar_preset_tide_name">حِرفيّ المدّ</string>
+    <string name="nm_avatar_preset_tide_description">سمندل مائي بلون زبد البحر، بزوائد مرجانية وجراب أدوات بسيط</string>
+    <string name="nm_avatar_preset_dusk_name">عثّة الغسق</string>
+    <string name="nm_avatar_preset_dusk_description">عثّة نيليّة متأمّلة، ببقع خوخيّة على جناحيها وياقة قشدية ونظّارة مستديرة</string>
+    <string name="nm_avatar_preset_copper_name">بلّوطة النحاس</string>
+    <string name="nm_avatar_preset_copper_description">آلة صغيرة على شكل بلّوطة نحاسيّة، بألواح مريمية ووشاح أزرق خافت</string>
+    <string name="nm_avatar_preset_a11y">الخيار %1$d: %2$s، %3$s</string>
+    <string name="nm_avatar_preset_ai">إلهام من الذكاء الاصطناعي</string>
     <string name="nm_avatar_default_description">تنين رضيع ممتلئ الجسم بلون أصفر باهت، ذو قرون برتقالية صغيرة وأجنحة مطوية صغيرة</string>
     <string name="nm_avatar_style_flat">مسطح</string>
     <string name="nm_avatar_style_clay">صلصال ثلاثي الأبعاد</string>
@@ -1085,7 +1095,6 @@
     <string name="nm_cloud_provider_no_delete">هذا المُزوّد هو حسابك على nanoMuse Cloud. أوقفه أعلاه لإيقاف استخدام نماذجه؛ لتسجيل الخروج افتح الإعدادات › nanoMuse Cloud.</string>
     <string name="nm_welcome_own_key">استخدم مفتاح API الخاص بك بدلاً من ذلك</string>
     <string name="nm_useit_title">استخدمه لـ</string>
-    <string name="nm_useit_body">اختر ما يجب أن يتعامل معه هذا المفتاح. يحتفظ nanoMuse Cloud بالباقي.</string>
     <string name="nm_useit_body_signed_out">اختر ما يجب أن يتعامل معه هذا المفتاح.</string>
     <string name="nm_useit_use">استخدم</string>
     <string name="nm_useit_not_now">ليس الآن</string>
@@ -1110,6 +1119,7 @@
     <string name="nm_own_clip_choose">اختر مقطعًا</string>
     <string name="nm_own_clip_replace">استبدل المقطع</string>
     <string name="nm_own_clip_default">الوجه الافتراضي</string>
+    <string name="nm_own_clip_mood_remove">إزالة</string>
     <string name="nm_own_clip_menu">مقطعك الخاص…</string>
     <string name="nm_own_clip_preview_title">معاينة</string>
     <string name="nm_own_clip_preview_body">هكذا يظهر بوصفه الوجه: بلا صوت، في حلقة، مقصوصًا داخل الدائرة.</string>

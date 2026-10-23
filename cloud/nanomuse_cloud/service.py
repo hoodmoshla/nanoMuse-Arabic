@@ -43,6 +43,8 @@ from .senders import CodeSender, LogSender, SendError, make_sender
 log = logging.getLogger("nanomuse_cloud")
 
 KEY_PREFIX = "nm_"
+HUB_KINDS = ("phone", "computer", "web")
+HUB_DEVICE_ID = re.compile(r"^[A-Za-z0-9._:-]{4,80}$")
 # the settings-table key of the nudges policy (0.18, nudges.py)
 NUDGES_KEY = "nudges"
 
@@ -262,6 +264,10 @@ class Caller:
     via: str = "code"
     key_created_at: int = 0
     key_prefix: str = ""
+    # 0.27: once set, this credential may announce only this Hub installation.
+    # Empty is a legacy credential whose first accepted hello performs the binding.
+    hub_device_id: str = ""
+    hub_device_kind: str = ""
     # Invitations (0.4): the code this person hands out and how many came.
     invite_code: str = ""
     invites: int = 0
@@ -387,10 +393,10 @@ class Cloud:
             log.warning("CLOUD_MODELS: %s", line)
         # The members' identifiers, hashed once so a request can be matched
         # against the list without ever seeing the plaintext.
-        self.member_hashes: frozenset[str] = frozenset(i.hash(settings.hmac_key) for i in self._listed_identifiers())
-        # The reviewer's addresses (REVIEW_ADDRESSES), hashed the same way; empty — and so
-        # the whole feature off — unless REVIEW_CODE is six digits as well.
-        self.review_hashes: frozenset[str] = frozenset(i.hash(settings.hmac_key) for i in self._review_identifiers())
+        self.member_hashes: frozenset[str] = frozenset(h for i in self._listed_identifiers() for h in i.hashes(settings.hmac_key))
+        # The reviewer's addresses (REVIEW_ADDRESSES), hashed the same way; empty, and so
+        # the whole feature off, unless REVIEW_CODE is six digits as well.
+        self.review_hashes: frozenset[str] = frozenset(h for i in self._review_identifiers() for h in i.hashes(settings.hmac_key))
         if self.review_hashes:
             log.warning("review sign-in is on for %d address(es): a fixed code, nothing sent", len(self.review_hashes))
         if settings.signup_open:
@@ -674,11 +680,17 @@ class Cloud:
         the reviewer's address either way, since the operator named it."""
         return self.s.signup_open or self.listed(ident) or self.is_review(ident)
 
+    def _account_for(self, ident: Identifier) -> sqlite3.Row | None:
+        """Look up an account by ``ident``'s canonical hash, falling back to its
+        legacy pre-canonical hash when present so existing dotted Gmail accounts
+        keep matching."""
+        return self.db.account_by_hashes(ident.hashes(self.s.hmac_key), shared=ident.merged_hash(self.s.hmac_key))
+
     def _refuse_if_signups_closed(self, ident: Identifier) -> None:
-        """0.22: the *Sign-ups* switch is off — an identifier without an account is turned
+        """0.22: the *Sign-ups* switch is off; an identifier without an account is turned
         away (`signup_closed`); everyone who already has one carries on, and so does the
         reviewer's address (a review must not fail on a paused switch)."""
-        if self.controls.on("signups") or self.is_review(ident) or self.db.account_by_hash(ident.hash(self.s.hmac_key)) is not None:
+        if self.controls.on("signups") or self.is_review(ident) or self._account_for(ident) is not None:
             return
         raise CloudError(
             403,
@@ -686,20 +698,43 @@ class Cloud:
             "New sign-ups are paused on this relay for now; existing accounts keep working. Try again later.",
         )
 
+    def _is_blocked_domain(self, domain: str) -> bool:
+        """Whether ``domain`` or one of its parent domains is on the disposable-mail blocklist
+        and not explicitly allowed in ``signup_domain_allow_set``."""
+        if domain in self.s.signup_domain_allow_set:
+            return False
+        blocked = self.s.signup_domain_block_set
+        if not blocked:
+            return False
+        if domain in blocked:
+            return True
+        return any(domain.endswith("." + b) for b in blocked)
+
     def _refuse_if_domain_limited(self, ident: Identifier) -> None:
         """At most SIGNUP_PER_DOMAIN_DAY new accounts per e-mail domain per rolling day, for
         domains that are not a well known provider or on the allow list: an address of such
         a domain without an account yet is turned away (`domain_limited`) once the day's
-        count is reached. An existing account always gets its code; phone numbers are never
-        limited; the reviewer's address is never limited. A catch-all domain of one's own,
-        or a bought list of mailboxes, is how one person made hundreds of accounts."""
-        limit = self.s.signup_per_domain_day
-        if limit <= 0 or ident.channel != "email" or self.is_review(ident):
+        count is reached, and domains on the disposable blocklist are refused for new
+        sign-ups right away. An existing account always gets its code; phone numbers are
+        never limited; the reviewer's address is never limited."""
+        if ident.channel != "email" or self.is_review(ident):
             return
         domain = ident.value.rpartition("@")[2].lower()
-        if not domain or domain in self.s.signup_domain_allow_set:
+        if not domain:
             return
-        if self.db.account_by_hash(ident.hash(self.s.hmac_key)) is not None:
+        if self._is_blocked_domain(domain):
+            if self._account_for(ident) is not None:
+                return
+            self.db.add_event("", "signup.domain_limited", domain[:200])
+            raise CloudError(
+                429,
+                "domain_limited",
+                "This address's domain has reached today's sign-up limit on this relay; try again tomorrow or use another address",
+            )
+        limit = self.s.signup_per_domain_day
+        if limit <= 0 or domain in self.s.signup_domain_allow_set:
+            return
+        if self._account_for(ident) is not None:
             return
         if self.db.signups_from_domain_since(domain, now() - 86400) < limit:
             return
@@ -714,7 +749,7 @@ class Cloud:
         review = self.is_review(ident)
         if not review and not self.sender.accepts(ident):
             # the honest answer up front: a Hong Kong or overseas number gets no SMS from
-            # 号码认证, so the person should not wait for one — e-mail works everywhere
+            # 号码认证, so the person should not wait for one; e-mail works everywhere
             if ident.channel == "phone" and not ident.value.startswith("+86"):
                 raise CloudError(
                     400,
@@ -730,17 +765,23 @@ class Cloud:
             raise CloudError(403, "not_invited", "This relay is private; that address is not on its list")
         self._refuse_if_signups_closed(ident)
         self._refuse_if_domain_limited(ident)
-        account = self.db.account_by_hash(ident.hash(self.s.hmac_key))
+        account = self._account_for(ident)
         disabled = account is not None and bool(account["disabled"])
-        t = now()
-        if self.db.codes_recent_for(ident.hash(self.s.hmac_key), t - 600) >= self.s.code_per_identifier_10m:
-            raise CloudError(429, "code_too_often", "Too many codes for this address; wait a few minutes")
-        if ip and self.db.codes_recent_for_ip(ip, t - 3600) >= self.s.code_per_ip_hour:
-            raise CloudError(429, "code_too_often", "Too many codes from this network; wait an hour")
         # The reviewer's code is the fixed one and goes nowhere: the row is written like
         # anyone's, so the lifetime, the attempt limit and the rate limits are the same.
         code = self.s.review_code.strip() if review else f"{secrets.randbelow(1_000_000):06d}"
-        self.db.insert_code(ident.hash(self.s.hmac_key), _code_hash(self.s.hmac_key, code), ip, self.s.code_ttl_s)
+        limited = self.db.insert_code_limited(
+            ident.hash(self.s.hmac_key),
+            _code_hash(self.s.hmac_key, code),
+            ip,
+            self.s.code_ttl_s,
+            self.s.code_per_identifier_10m,
+            self.s.code_per_ip_hour,
+        )
+        if limited == "identifier":
+            raise CloudError(429, "code_too_often", "Too many codes for this address; wait a few minutes")
+        if limited == "ip":
+            raise CloudError(429, "code_too_often", "Too many codes from this network; wait an hour")
         if review:
             log.info("review sign-in: a code request for the reviewer's address; nothing sent")
             return
@@ -758,40 +799,76 @@ class Cloud:
         except SendError as e:
             raise CloudError(502, "send_failed", f"Could not send the code ({e})") from e
 
-    def verify_code(self, ident: Identifier, code: str, device: str, invite: str = "") -> tuple[str, Caller, bool]:
+    def verify_code(
+        self,
+        ident: Identifier,
+        code: str,
+        device: str,
+        invite: str = "",
+        hub_device_id: str = "",
+        hub_device_kind: str = "",
+    ) -> tuple[str, Caller, bool]:
         """Returns (api_key, caller, created). The key is shown once. `invite` is
         a friend's code; it counts only when this sign-in creates the account."""
         if not self.allowed(ident):
             raise CloudError(403, "not_invited", "This relay is private; that address is not on its list")
         id_hash = ident.hash(self.s.hmac_key)
-        row = self.db.live_code(id_hash)
-        if row is None:
+        result = self.db.check_code(id_hash, _code_hash(self.s.hmac_key, code.strip()), self.s.code_max_attempts)
+        if result == "expired":
             raise CloudError(400, "code_expired", "The code has expired; ask for a new one")
-        attempts = self.db.bump_attempts(int(row["id"]))
-        if attempts > self.s.code_max_attempts:
-            self.db.consume_code(int(row["id"]))
-            raise CloudError(400, "code_expired", "Too many tries; ask for a new code")
-        if not secrets.compare_digest(str(row["code_hash"]).encode(), _code_hash(self.s.hmac_key, code.strip()).encode()):
+        if result == "wrong":
             raise CloudError(400, "code_wrong", "That code is not right")
-        self.db.consume_code(int(row["id"]))
-        return self.sign_in(ident, device, "code", invite)
+        return self.sign_in(ident, device, "code", invite, hub_device_id, hub_device_kind)
 
-    def sign_in(self, ident: Identifier, device: str, via: str, invite: str = "") -> tuple[str, Caller, bool]:
+    def sign_in(
+        self,
+        ident: Identifier,
+        device: str,
+        via: str,
+        invite: str = "",
+        hub_device_id: str = "",
+        hub_device_kind: str = "",
+    ) -> tuple[str, Caller, bool]:
         """An identifier that has just been proven (a code, the carrier's word) becomes a
         signed-in device: the account is made on first sight, a key is issued.
         Returns (api_key, caller, created)."""
         if not self.allowed(ident):
             raise CloudError(403, "not_invited", "This relay is private; that address is not on its list")
         id_hash = ident.hash(self.s.hmac_key)
-        account = self.db.account_by_hash(id_hash)
+        account = self._account_for(ident)
         created = account is None
         if account is None:
             self._refuse_if_signups_closed(ident)
+            self._refuse_if_domain_limited(ident)
             account_id = self.db.new_account_id()
             enc = self.crypto.encrypt(account_id, ident.value)
-            account = self.db.create_account(
-                id_hash, ident.channel, ident.hint, self.s.signup_tokens, enc, account_id=account_id, grant_uy=self.s.allowance_uy
+            domain = ident.value.rpartition("@")[2].lower() if ident.channel == "email" else ""
+            domain_limit = (
+                self.s.signup_per_domain_day if domain and not self.is_review(ident) and domain not in self.s.signup_domain_allow_set else 0
             )
+            account, created = self.db.create_account_limited(
+                id_hash,
+                ident.channel,
+                ident.hint,
+                self.s.signup_tokens,
+                enc,
+                account_id,
+                self.s.allowance_uy,
+                domain=domain,
+                domain_limit=domain_limit,
+                domain_since=now() - 86400,
+            )
+            if account is None:
+                self.db.add_event("", "signup.domain_limited", domain[:200])
+                raise CloudError(
+                    429,
+                    "domain_limited",
+                    "This address's domain has reached today's sign-up limit on this relay; try again tomorrow or use another address",
+                )
+            account_id = str(account["id"])
+        else:
+            account_id = str(account["id"])
+        if created:
             self.db.add_event(account_id, "account.created", ident.channel)
             if self.s.improve_default:
                 # the relay's default for a new account, said on its timeline as such (not as a
@@ -802,7 +879,14 @@ class Cloud:
         elif account["disabled"]:
             raise CloudError(403, "account_disabled", "This account is disabled")
 
-        key, caller = self._issue_key(account["id"], device, via=via)
+        key, caller = self._issue_key(
+            account["id"],
+            device,
+            via=via,
+            hub_device_id=hub_device_id,
+            hub_device_kind=hub_device_kind,
+            replace_hub_identity=bool(hub_device_id),
+        )
         self.db.add_event(account["id"], f"sign_in.{via}", device)
         if created:
             # the switches flip now; a notify rule's e-mail goes on its own thread, so this
@@ -865,7 +949,12 @@ class Cloud:
         try:
             if not self.db.invite_pending(account_id):
                 return False
-            settled, inviter_id, inviter_paid = self.db.settle_invite(account_id, self.s.cny_to_uy(self.s.invite_bonus_cny))
+            settled, inviter_id, inviter_paid = self.db.settle_invite(
+                account_id,
+                self.s.cny_to_uy(self.s.invite_bonus_cny),
+                min_spent_uy=self.s.invite_settle_min_spent_uy,
+                refuse_same_ip=True,
+            )
         except sqlite3.Error as e:
             log.warning("invite: could not settle for %s: %s", account_id[:8], e)
             return False
@@ -933,9 +1022,46 @@ class Cloud:
         allowance. Kept in the shape 0.4 phones read so they show 「不限」."""
         return {"unlimited": True, "allowed": None, "used": 0, "left": None, "per_face": 4}
 
-    def _issue_key(self, account_id: str, device: str, via: str, expires_at: int | None = None) -> tuple[str, Caller]:
+    @staticmethod
+    def validate_hub_identity(device_id: str, kind: str, *, optional: bool = True) -> tuple[str, str]:
+        """Validate the identity a new credential will own.
+
+        Old clients omit both fields and bind at their first hello during the
+        compatibility release. Supplying only one is never interpreted loosely.
+        """
+        device_id = str(device_id or "")
+        kind = str(kind or "")
+        if optional and not device_id and not kind:
+            return "", ""
+        if kind not in HUB_KINDS:
+            raise CloudError(400, "bad_device", "device_kind must be phone, computer or web")
+        if not HUB_DEVICE_ID.fullmatch(device_id):
+            raise CloudError(400, "bad_device", "device_id must be 4–80 letters, digits, . _ : -")
+        return device_id, kind
+
+    def _issue_key(
+        self,
+        account_id: str,
+        device: str,
+        via: str,
+        expires_at: int | None = None,
+        hub_device_id: str = "",
+        hub_device_kind: str = "",
+        replace_hub_identity: bool = False,
+    ) -> tuple[str, Caller]:
+        hub_device_id, hub_device_kind = self.validate_hub_identity(hub_device_id, hub_device_kind)
         key = KEY_PREFIX + secrets.token_urlsafe(30)
-        self.db.insert_key(_sha256(key), key[:10], account_id, device, via=via, expires_at=expires_at)
+        self.db.insert_key(
+            _sha256(key),
+            key[:10],
+            account_id,
+            device,
+            via=via,
+            expires_at=expires_at,
+            hub_device_id=hub_device_id,
+            hub_device_kind=hub_device_kind,
+            replace_hub_identity=replace_hub_identity,
+        )
         caller = self._caller(_sha256(key))
         assert caller is not None
         return key, caller
@@ -949,7 +1075,10 @@ class Cloud:
         requesting key is untouched (the caller revokes it if it has no further use for it).
         A session key cannot mint another: otherwise a key that lapses in an hour could
         hand itself 90 more days, and a container that leaked one would hold the account
-        for as long as it liked."""
+        for as long as it liked. The Hub identity is not fixed here: the container's
+        runtime is a `computer` of the account with an id of its own, and binds it at its
+        first hello like any credential; what a session key can never do is take an id
+        another key holds (`Database.bind_key_to_hub_device`)."""
         if caller.via == "session":
             raise CloudError(403, "session_from_session", "A session key cannot issue another session key; use the device's own key")
         ttl = max(60, min(int(ttl_s), self.SESSION_KEY_MAX_S))
@@ -1005,13 +1134,21 @@ class Cloud:
         self.db.set_password(caller.account_id, "")
         self.db.add_event(caller.account_id, "password.cleared")
 
-    def login_password(self, ident: Identifier, password: str, device: str, ip: str = "") -> tuple[str, Caller]:
+    def login_password(
+        self,
+        ident: Identifier,
+        password: str,
+        device: str,
+        ip: str = "",
+        hub_device_id: str = "",
+        hub_device_kind: str = "",
+    ) -> tuple[str, Caller]:
         """Sign in on a new device with the password instead of waiting for a code."""
         if ip and self._login_failures_from(ip) >= self.s.login_fail_per_ip_hour > 0:
             raise CloudError(429, "locked", "Too many wrong passwords from this network; wait a while or sign in with a code")
         if not self.allowed(ident):
             raise CloudError(403, "not_invited", "This relay is private; that address is not on its list")
-        account = self.db.account_by_hash(ident.hash(self.s.hmac_key))
+        account = self._account_for(ident)
         if account is None:
             # Same answer as a wrong password: the sign-in form must not tell
             # whether a number has an account.
@@ -1023,7 +1160,10 @@ class Cloud:
         if locked_until and int(locked_until) > now():
             raise CloudError(429, "locked", "Too many wrong passwords; wait a while or sign in with a code")
         if not account["password_hash"]:
-            raise CloudError(400, "no_password", "This account has no password yet; sign in with a code and set one under Account")
+            hash_password("x")
+            self._note_login_failure(ip)
+            self.db.add_event(account["id"], "sign_in.failed", device)
+            raise CloudError(401, "bad_credentials", "That address and password do not match")
         if not check_password(password, account["password_hash"]):
             left = self.db.login_failed(account["id"], self.s.password_max_attempts, self.s.lockout_s)
             self._note_login_failure(ip)
@@ -1036,7 +1176,14 @@ class Cloud:
             # probe with a guessed password gets the same answer as for any wrong password.
             raise CloudError(403, "account_disabled", "This account is disabled")
         self.db.login_succeeded(account["id"])
-        key, caller = self._issue_key(account["id"], device, via="password")
+        key, caller = self._issue_key(
+            account["id"],
+            device,
+            via="password",
+            hub_device_id=hub_device_id,
+            hub_device_kind=hub_device_kind,
+            replace_hub_identity=bool(hub_device_id),
+        )
         self.db.add_event(account["id"], "sign_in.password", device)
         return key, caller
 
@@ -1083,6 +1230,8 @@ class Cloud:
                 via=row["via"] or "code",
                 key_created_at=int(row["created_at"]),
                 key_prefix=row["prefix"],
+                hub_device_id=row["hub_device_id"] or "",
+                hub_device_kind=row["hub_device_kind"] or "",
                 invite_code=row["invite_code"] or "",
                 invites=int(row["invites"] or 0),
                 grant_uy=int(row["grant_uy"] or 0),
@@ -1409,7 +1558,7 @@ class Cloud:
                 "bonus_available": False,
                 "bonus_at": caller.contribute_bonus_at,
             },
-            "models": [m.to_public() for m in self.s.models],
+            "models": [m.to_public() for m in self.offered_models()],
             "base_url": self.s.public_base,
             "recent": [self._ledger_row(r) for r in self.db.recent_ledger(caller.account_id)],
             # 0.18: when the app may ask for a star (the same object as GET /v1/nudges), so a
@@ -1487,6 +1636,15 @@ class Cloud:
         """The model a request names, checked for `kind` (a chat model answers chat, an
         image model draws, a video model films — never across). The menu for everyone;
         for a member, with any_model_members on, any id shaped like one besides."""
+        if kind in ("image", "video") and not self.s.media_enabled:
+            noun = "pictures" if kind == "image" else "clips"
+            raise CloudError(
+                410,
+                "hosted_media_retired",
+                f"nanoMuse Cloud no longer generates {noun}. Add your own image or video "
+                "provider and API key in Settings → Models, then try again.",
+                {"kind": kind, "action": "configure_own_provider"},
+            )
         m = self.s.model(model_id)
         if m is not None and m.kind == kind:
             return m
@@ -1500,11 +1658,15 @@ class Cloud:
         more = ", or any model of the provider's by its id" if self.any_model(caller) else ""
         raise CloudError(404, "model_not_offered", f"nanoMuse Cloud does not offer {model_id!r}; choose one of: {offered}{more}")
 
+    def offered_models(self) -> tuple[ModelSpec, ...]:
+        """The configured menu after operator feature switches are applied."""
+        return self.s.models if self.s.media_enabled else tuple(m for m in self.s.models if m.kind == "chat")
+
     def models_for(self, caller: Caller) -> dict:
         """The menu, and whether this account may name a model beyond it."""
         return {
             "object": "list",
-            "data": [m.to_public() for m in self.s.models],
+            "data": [m.to_public() for m in self.offered_models()],
             "nanomuse": {"any_model": self.any_model(caller)},
         }
 
@@ -2116,6 +2278,16 @@ class Cloud:
         the number next to what they have left today. Nothing is charged."""
         images = max(0, min(images, 50))
         clips = max(0, min(clips, 20))
+        if (images or clips) and not self.s.media_enabled:
+            kind = "image" if images else "video"
+            noun = "pictures" if images else "clips"
+            raise CloudError(
+                410,
+                "hosted_media_retired",
+                f"nanoMuse Cloud no longer generates {noun}. Add your own {kind} provider "
+                "and API key in Settings → Models to use this feature.",
+                {"kind": kind, "action": "configure_own_provider"},
+            )
         parts = []
         cost = 0
         if images:
@@ -2183,7 +2355,7 @@ class Cloud:
                 ident = parse(identifier)
             except BadIdentifier as e:
                 raise CloudError(400, "bad_identifier", str(e)) from e
-            row = self.db.account_by_hash(ident.hash(self.s.hmac_key))
+            row = self._account_for(ident)
         else:
             row = self.db.account(account_id)
         if row is None:

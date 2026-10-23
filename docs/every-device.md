@@ -26,6 +26,8 @@ Android app is the reference; the others follow its shape, not its pixels:
 | First run: what it is, sign in with a phone number or an e-mail (free) or your own key, the Hands permissions, meet | `FirstRunSetup` | the same four pages |
 | A clip of your own as the face: MP4 or MOV, up to 15 seconds and 30 MB, H.264 video on every device and HEVC where the device can play it (tried, not assumed); nothing is transcoded, a refusal states the limits, the clip stays on that device | `OwnClip.kt` (H.264 only today) | `own-clip.ts` and the preview: an HEVC clip the computer cannot decode is refused there |
 
+Each device can also set a separate local clip for idle, working, waiting, happy and error in the avatar studio. These are optional: a mood without a clip uses the existing single clip when present, otherwise its built-in or studio animation. Each chosen clip keeps the same format, duration and size limits. Removing a mood override leaves the others unchanged. Neither the clips nor their preview images sync through nanoMuse Cloud.
+
 ## Two roles
 
 Each device plays both, at the same time.
@@ -154,7 +156,9 @@ step (`agent.inject`; the note is context, never a row, never pushed back). A si
 conversation pulled from the relay gets its dsh session at once (listed in
 *Side chats* though no turn ran here yet); the main chat is the session the
 account's main conversation lives in, and the first conversation starts in it
-when the account already has one. The harness has no delete and a log forgets
+when the account already has one. Its saved conversation mapping remains enough
+to accept a final reply if the cached conversation row has been cleared, before
+the pull cursor moves past that reply. The harness has no delete and a log forgets
 nothing: a message deleted elsewhere is hidden here, a chat deleted elsewhere
 is archived here. Since 0.1.38 the plugin keeps *Also sync side chats* with its
 own state (off by default; off, a side chat here is neither listed nor read for

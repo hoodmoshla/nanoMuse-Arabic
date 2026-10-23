@@ -88,7 +88,7 @@ def test_providers_signed_out_with_the_default_model(server):
     view = client.get("/api/providers").json()
     assert view["region"] == ""
     ids = [p["id"] for p in view["providers"]]
-    assert len(ids) == 20 and "nanomuse_cloud" not in ids
+    assert len(ids) == 21 and "nanomuse_cloud" not in ids
     # DeepSeek is the default chat model, by its host; the hands follow the chat model
     assert view["configured"]["chat"]["provider"] == "deepseek"
     assert view["configured"]["chat"]["protocol"] == "openai"
@@ -141,7 +141,15 @@ def test_chatgpt_status_and_logout_signed_out(server):
     client, service = server
     status = client.get("/api/chatgpt/status").json()
     assert status["signed_in"] is False and status["pending"] is False
-    assert status["models"] == ["gpt-5.6-sol", "gpt-5.4", "gpt-5.4-mini"]
+    assert status["models"] == [
+        "gpt-6.1-sol",
+        "gpt-6-sol",
+        "gpt-6-luna",
+        "gpt-6-astra",
+        "gpt-5.6-sol",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+    ]
     assert "url" not in status and "error" not in status
     assert client.post("/api/chatgpt/logout").json() == {"ok": True, "was_signed_in": False}
     # a callback with nothing pending

@@ -20,7 +20,7 @@ nanoMuse Cloud is the relay behind nanomuse.cn: sign-in by e-mail or phone, the 
 
 - **A machine.** A VPS with 1 vCPU and 1 GB of memory is enough for a family; the relay idles at a few tens of megabytes and the model work happens at the provider. Such a server costs on the order of ¥30–60 a month inside mainland China or US$4–6 outside it, from any provider; the relay does not care which. A home server or a spare laptop works for a LAN-only relay.
 - **A domain** pointing at the machine (an A record), with ports 80 and 443 reachable. Caddy, which runs next to the relay, fetches and renews the Let's Encrypt certificate on its own. Skip this for a LAN-only relay.
-- **A model provider key.** The relay spends *your* money on *your* provider: everyone who signs in on your relay is billed to that key, at the provider's prices, within the allowance you set (`ALLOWANCE_CNY`, `SIGNUP_OPEN`, members in `ALLOWED_IDENTIFIERS`; [cloud/README.md](../cloud/README.md#settings)). Without a key, sign-in and the hub work and chat does not.
+- **A model provider key.** The relay spends *your* money on *your* provider: everyone who signs in on your relay is billed to that key, at the provider's prices, within the allowance you set (`ALLOWANCE_CNY`, `SIGNUP_OPEN`, `SIGNUP_PER_DOMAIN_DAY`, `SIGNUP_DOMAIN_BLOCK`, members in `ALLOWED_IDENTIFIERS`; [cloud/README.md](../cloud/README.md#settings)). Without a key, sign-in and the hub work and chat does not.
 - **Docker** with the compose plugin, and `curl`.
 
 ### In one command
@@ -38,6 +38,13 @@ bash scripts/self-host.sh --local --bind 0.0.0.0   # reachable from the phones o
 ```
 
 By hand instead of the script: `cd cloud && cp .env.example .env`, fill in `CLOUD_DOMAIN`, `PUBLIC_BASE`, `ACME_EMAIL`, `CLOUD_SECRET`, `CLOUD_ADMIN_TOKEN`, `UPSTREAM_KEY` and the sender settings, then `docker compose up -d`; or, without Caddy, `docker compose -f docker-compose.yml -f docker-compose.local.yml up -d`. The relay runs as uid 10001 inside its container, and `cloud/data`, the bind-mounted data directory, must belong to that uid on the host: `mkdir -p data && sudo chown -R 10001:10001 data` before the first start, and once more when upgrading from a relay whose image ran as root (the script does this for you; a relay that cannot write the directory says so at start and stops).
+
+Chat may use a different OpenAI-compatible provider while pictures and clips stay on
+Model Studio: put the chat endpoint and key in `UPSTREAM_BASE` / `UPSTREAM_KEY`, and
+the Model Studio native endpoint and key in `DASHSCOPE_BASE` / `DASHSCOPE_KEY`.
+`DASHSCOPE_KEY` falls back to `UPSTREAM_KEY` when it is empty. If the change replaces
+the chat menu, `CLOUD_MODEL_ALIASES` can map ids saved by existing clients to a model
+in `CLOUD_MODELS`, for example `{"old-chat-model":"new-chat-model"}`.
 
 ### Sign-in codes
 

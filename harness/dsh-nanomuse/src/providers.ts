@@ -197,6 +197,12 @@ export interface OwnProvider {
    * vendor wants and speaks each model's own shape, so the row names no `api` and no base URL.
    */
   catalogRoute?: boolean
+  /**
+   * The chat model list was trimmed or edited in the model adapter's settings (`llm-pi-ai`
+   * `providers.<id>.models`) or saved with `catalogOnly`: a later save without new `models`
+   * keeps these chat models instead of merging the endpoint's full `/models` list back in.
+   */
+  customModels?: boolean
 }
 
 export interface OwnModel {
@@ -230,7 +236,7 @@ export function apiOf(protocol: Protocol, baseURL = ''): string {
 }
 
 /** Ids that name a sighted model, as far as a name says (the endpoint's list carries no modalities). */
-const SIGHTED = /vl|vision|ocr|4o|gpt-5|\bo[34]\b|claude|gemini|grok|kimi|glm-4(\.\d)?v|pixtral|llama-?4|qwen3|minimax|mistral-medium|magistral|step-3|doubao-seed|ark/i
+const SIGHTED = /vl|vision|ocr|4o|gpt-[56]|\bo[34]\b|claude|gemini|grok|kimi|glm-4(\.\d)?v|pixtral|llama-?4|qwen3|minimax|mistral-medium|magistral|step-3|doubao-seed|ark/i
 
 /** Whether a chat model of a provider with `vision` takes pictures, by its id (the catalogue's `hands` default always does). */
 export function sighted(entry: Pick<ProviderEntry, 'capabilities' | 'defaults'>, modelId: string): boolean {
