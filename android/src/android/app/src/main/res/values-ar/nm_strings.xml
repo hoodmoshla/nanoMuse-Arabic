@@ -745,7 +745,7 @@
     <string name="nm_face_cost_not_now">ليس الآن</string>
     <string name="nm_face_cost_declined">حسنًا، يبقى الوجه كما هو.</string>
     <string name="nm_cloud_invite_title">دعوة صديق</string>
-    <string name="nm_cloud_invite_why">كل شخص جديد يسجّل باستخدام رمزك يضيف ¥%1$s إلى حصتك، و¥%1$s إلى حصته. لا تنتهي صلاحيتها.</string>
+    <string name="nm_cloud_invite_why">عندما يسجّل صديق برمزك ويرسل طلبه الأول، تحصلان معًا على ¥%1$s. لا تنتهي صلاحيتها.</string>
     <string name="nm_cloud_invite_code">رمزك</string>
     <string name="nm_cloud_invite_share">مشاركة الرابط</string>
     <string name="nm_cloud_invite_copy">نسخ</string>
