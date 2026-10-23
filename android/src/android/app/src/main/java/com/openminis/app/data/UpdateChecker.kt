@@ -22,7 +22,6 @@ import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
 import java.security.MessageDigest
-import java.io.File
 
 /**
  * Checks GitHub releases for an APK newer than [BuildConfig.VERSION_NAME] and
@@ -280,15 +279,15 @@ object UpdateChecker {
      * update this app will fetch.
      */
     internal fun isTrustedDownloadUrl(url: String): Boolean {
-        val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return false
-        if (!uri.scheme.equals("https", ignoreCase = true)) return false
-        val host = uri.host?.lowercase() ?: return false
+        val withoutScheme = url.substringAfter("://", "")
+        if (!url.startsWith("https://", ignoreCase = true) || withoutScheme.isEmpty()) return false
+        val host = withoutScheme.substringBefore('/').substringBefore(':').lowercase()
+        val path = "/" + withoutScheme.substringAfter('/', "")
         if (host != "github.com" && host != "objects.githubusercontent.com" &&
             host != "release-assets.githubusercontent.com"
         ) {
             return false
         }
-        val path = uri.path.orEmpty()
         return path.startsWith("/$OWNER/$REPO/releases/download/") ||
             path.contains("/$OWNER/$REPO/releases/download/")
     }
@@ -562,8 +561,8 @@ object UpdateChecker {
      * treated as "newer than 1.0.0" — acceptable noise for our use case.
      */
     internal fun compareVersions(a: String, b: String): Int {
-        val ap = a.split('.', '-')
-        val bp = b.split('.', '-')
+        val ap = a.trim().removePrefix("v").removePrefix("V").split('.', '-')
+        val bp = b.trim().removePrefix("v").removePrefix("V").split('.', '-')
         val n = maxOf(ap.size, bp.size)
         for (i in 0 until n) {
             val x = ap.getOrNull(i) ?: ""
