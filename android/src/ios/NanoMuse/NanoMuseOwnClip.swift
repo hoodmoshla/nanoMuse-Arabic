@@ -82,6 +82,9 @@ final class NanoMuseOwnClip: ObservableObject {
     @Published private(set) var clip: URL?
     /// The clip's first frame: the still under it, and in its place when there is no drawn face.
     @Published private(set) var poster: UIImage?
+    /// Per-mood clips override the older single clip without changing its file.
+    @Published private(set) var moods: [NanoMuseMood: URL] = [:]
+    @Published private(set) var moodPosters: [NanoMuseMood: UIImage] = [:]
     /// Bumped whenever the clip is written or removed, so a player on the same path is rebuilt.
     @Published private(set) var version = 0
 
@@ -96,6 +99,12 @@ final class NanoMuseOwnClip: ObservableObject {
     nonisolated static var clipFile: URL { NanoMuseFaceStore.directory.appendingPathComponent("own-clip.mp4") }
     nonisolated static var posterFile: URL { NanoMuseFaceStore.directory.appendingPathComponent("own-clip.png") }
     nonisolated static var pendingFile: URL { NanoMuseFaceStore.directory.appendingPathComponent("own-clip.pending.mp4") }
+    nonisolated static func moodClipFile(_ mood: NanoMuseMood) -> URL {
+        NanoMuseFaceStore.directory.appendingPathComponent("own-clip-\(mood.rawValue).mp4")
+    }
+    nonisolated static func moodPosterFile(_ mood: NanoMuseMood) -> URL {
+        NanoMuseFaceStore.directory.appendingPathComponent("own-clip-\(mood.rawValue).png")
+    }
 
     nonisolated private static func size(of url: URL) -> Int64? {
         ((try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? NSNumber)?.int64Value
@@ -121,25 +130,41 @@ final class NanoMuseOwnClip: ObservableObject {
             clip = nil
             poster = nil
         }
+        var next: [NanoMuseMood: URL] = [:]
+        var stills: [NanoMuseMood: UIImage] = [:]
+        for mood in NanoMuseMood.allCases {
+            let url = Self.moodClipFile(mood)
+            if let size = Self.size(of: url), size > 0 {
+                next[mood] = url
+                if let data = try? Data(contentsOf: Self.moodPosterFile(mood)),
+                   let image = UIImage(data: data) {
+                    stills[mood] = image
+                }
+            }
+        }
+        moods = next
+        moodPosters = stills
     }
 
     /// "Use": the pending copy becomes the clip, its first frame the still.
-    func adopt(_ pending: Pending) {
+    func adopt(_ pending: Pending, mood: NanoMuseMood? = nil) {
         let fm = FileManager.default
         try? fm.createDirectory(at: NanoMuseFaceStore.directory, withIntermediateDirectories: true)
-        try? fm.removeItem(at: Self.clipFile)
+        let destination = mood.map(Self.moodClipFile) ?? Self.clipFile
+        let still = mood.map(Self.moodPosterFile) ?? Self.posterFile
+        try? fm.removeItem(at: destination)
         do {
-            try fm.moveItem(at: pending.url, to: Self.clipFile)
+            try fm.moveItem(at: pending.url, to: destination)
         } catch {
-            try? fm.copyItem(at: pending.url, to: Self.clipFile)
+            try? fm.copyItem(at: pending.url, to: destination)
             try? fm.removeItem(at: pending.url)
         }
-        Self.keepOutOfBackup(Self.clipFile)
+        Self.keepOutOfBackup(destination)
         if let poster = pending.poster, let png = poster.pngData() {
-            try? png.write(to: Self.posterFile, options: .atomic)
-            Self.keepOutOfBackup(Self.posterFile)
+            try? png.write(to: still, options: .atomic)
+            Self.keepOutOfBackup(still)
         } else {
-            try? fm.removeItem(at: Self.posterFile)
+            try? fm.removeItem(at: still)
         }
         version += 1
         rescan()
@@ -151,10 +176,19 @@ final class NanoMuseOwnClip: ObservableObject {
     }
 
     /// "Default face": back to the drawn face, or the dragon.
-    func clear() {
+    func clear(mood: NanoMuseMood? = nil) {
         let fm = FileManager.default
-        try? fm.removeItem(at: Self.clipFile)
-        try? fm.removeItem(at: Self.posterFile)
+        if let mood {
+            try? fm.removeItem(at: Self.moodClipFile(mood))
+            try? fm.removeItem(at: Self.moodPosterFile(mood))
+        } else {
+            try? fm.removeItem(at: Self.clipFile)
+            try? fm.removeItem(at: Self.posterFile)
+            for state in NanoMuseMood.allCases {
+                try? fm.removeItem(at: Self.moodClipFile(state))
+                try? fm.removeItem(at: Self.moodPosterFile(state))
+            }
+        }
         try? fm.removeItem(at: Self.pendingFile)
         version += 1
         rescan()
@@ -256,11 +290,36 @@ final class NanoMuseOwnClipPicker: ObservableObject {
     @Published var presented = false
     @Published var item: PhotosPickerItem?
     @Published var pending: NanoMuseOwnClip.Pending?
+    var mood: NanoMuseMood?
     @Published var message: String?
     @Published private(set) var busy = false
+    private var readyForPreview: NanoMuseOwnClip.Pending?
+    private var previewTask: Task<Void, Never>?
 
     /// Open the picker.
-    func choose() { presented = true }
+    func choose(mood: NanoMuseMood? = nil) {
+        previewTask?.cancel()
+        if let previous = readyForPreview { NanoMuseOwnClip.shared.discard(previous) }
+        readyForPreview = nil
+        self.mood = mood
+        presented = true
+    }
+
+    /// Wait for PhotosPicker's dismissal animation before opening another sheet.
+    func presentPreviewWhenPickerCloses() {
+        guard !presented, readyForPreview != nil else { return }
+        previewTask?.cancel()
+        previewTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(350))
+            } catch {
+                return
+            }
+            guard let self, !self.presented, let next = self.readyForPreview else { return }
+            self.readyForPreview = nil
+            self.pending = next
+        }
+    }
 
     /// The picker returned: look at the file, refuse or preview.
     func handle(_ picked: PhotosPickerItem?) {
@@ -276,8 +335,8 @@ final class NanoMuseOwnClipPicker: ObservableObject {
             }
             switch await NanoMuseOwnClip.importClip(from: file.url) {
             case .ready(let next):
-                if let old = self.pending { NanoMuseOwnClip.shared.discard(old) }
-                self.pending = next
+                self.readyForPreview = next
+                self.presentPreviewWhenPickerCloses()
             case .refused(let why, let probe):
                 self.message = Self.refusalText(why, probe)
             case .failed:
@@ -308,11 +367,14 @@ struct NanoMuseOwnClipHost: ViewModifier {
         content
             .photosPicker(isPresented: $picker.presented, selection: $picker.item, matching: .videos)
             .nmOnChange(of: picker.item) { picked in picker.handle(picked) }
+            .nmOnChange(of: picker.presented) { shown in
+                if !shown { picker.presentPreviewWhenPickerCloses() }
+            }
             .sheet(item: $picker.pending) { pending in
                 NanoMuseOwnClipPreview(
                     pending: pending,
                     onUse: {
-                        NanoMuseOwnClip.shared.adopt(pending)
+                        NanoMuseOwnClip.shared.adopt(pending, mood: picker.mood)
                         picker.pending = nil
                     },
                     onCancel: {
@@ -321,6 +383,7 @@ struct NanoMuseOwnClipHost: ViewModifier {
                     }
                 )
                 .presentationDetents([.large])
+                .interactiveDismissDisabled()
             }
             .alert(
                 AppLocalized("Your own clip"),
@@ -352,7 +415,6 @@ struct NanoMuseOwnClipPreview: View {
     let pending: NanoMuseOwnClip.Pending
     var onUse: () -> Void
     var onCancel: () -> Void
-    @State private var decided = false
 
     var body: some View {
         VStack(spacing: 14) {
@@ -380,7 +442,6 @@ struct NanoMuseOwnClipPreview: View {
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)
             Button {
-                decided = true
                 onUse()
             } label: {
                 Text(AppLocalized("Use"))
@@ -391,7 +452,6 @@ struct NanoMuseOwnClipPreview: View {
             .buttonStyle(.borderedProminent)
             .tint(NanoMuseTones.action)
             Button(AppLocalized("Cancel")) {
-                decided = true
                 onCancel()
             }
             .frame(maxWidth: .infinity)
@@ -401,9 +461,5 @@ struct NanoMuseOwnClipPreview: View {
                 .multilineTextAlignment(.center)
         }
         .padding(22)
-        .onDisappear {
-            // Swiped away: the same as "Cancel".
-            if !decided { onCancel() }
-        }
     }
 }

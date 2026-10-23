@@ -231,3 +231,131 @@ test("the restart-update intent reaches the question, with the same protection",
   assert.equal(await guard.requestExit("restart-update"), false);
   assert.deepEqual(dialog.asked, [{ items: [REPLY], intent: "restart-update" }]);
 });
+
+test("restart-update keeps the gate closed through a quiet installation handoff", async () => {
+  const work = fakeWork({ answers: [[]] });
+  const guard = exitWork({ work, dialog: fakeDialog(true), lines: [] });
+  assert.equal(await guard.requestExit("restart-update"), true);
+  assert.deepEqual(work.calls, ["gate closed", "busy"]);
+});
+
+test("restart-update cancels and restores the gate when confirmed work remains", async () => {
+  const work = fakeWork({ always: () => [REPLY] });
+  const lines = [];
+  const guard = exitWork({ work, dialog: fakeDialog(true), lines });
+  assert.equal(await guard.requestExit("restart-update"), false);
+  assert.equal(work.calls.at(-1), "gate open");
+  assert.equal(guard.approval, "none");
+  assert.equal(lines.includes("finish"), false);
+});
+
+test("restart-update refuses an unknown work state and restores the gate", async () => {
+  const gates = [];
+  const guard = exitWork({ work: {
+    busy: async () => { throw new Error("unavailable"); },
+    setGate: async (open) => { gates.push(open); },
+    stopAll: async () => undefined,
+  }, dialog: fakeDialog(true), lines: [] });
+  assert.equal(await guard.requestExit("restart-update"), false);
+  assert.deepEqual(gates, [false, true]);
+});
+
+test("restart-update cancels after a stop deadline even when a later check would be quiet", async () => {
+  const gates = [];
+  const c = clock();
+  let stopping = false;
+  const work = {
+    busy: async () => stopping ? [] : [REPLY],
+    setGate: async (open) => { gates.push(open); },
+    stopAll: () => { stopping = true; return new Promise(() => undefined); },
+  };
+  const lines = [];
+  const guard = exitWork({ work, dialog: fakeDialog(true), c, lines });
+  const pending = guard.requestExit("restart-update");
+  await new Promise((resolve) => setImmediate(resolve));
+  c.advance(15_000);
+  assert.equal(await pending, false);
+  assert.deepEqual(gates, [false, true]);
+  assert.equal(lines.includes("finish"), false);
+});
+
+test("quit with an installer cancels when a confirmed stop exceeds its deadline", async () => {
+  const gates = [];
+  const c = clock();
+  let stopping = false;
+  const guard = exitWork({ work: {
+    busy: async () => stopping ? [] : [REPLY],
+    setGate: async (open) => { gates.push(open); },
+    stopAll: () => { stopping = true; return new Promise(() => undefined); },
+  }, dialog: fakeDialog(true), c, lines: [] });
+  let installed = false;
+  const pending = guard.requestExit("quit", () => { installed = true; });
+  await new Promise((resolve) => setImmediate(resolve));
+  c.advance(15_000);
+  assert.equal(await pending, false);
+  assert.equal(installed, false);
+  assert.deepEqual(gates, [false, true]);
+  assert.equal(guard.approval, "none");
+});
+
+for (const item of [
+  { kind: "reply", label: "" },
+  { kind: "computer", label: "" },
+  { kind: "task", label: "Phone" },
+  { kind: "approval", label: "" },
+]) {
+  test(`Host restart protects active ${item.kind} work`, async () => {
+    const work = fakeWork({ answers: [[item]] });
+    const dialog = fakeDialog(false);
+    const lines = [];
+    let restarted = false;
+    const guard = exitWork({ work, dialog, lines });
+    assert.equal(await guard.requestRestart("restart-host", async () => { restarted = true; }), false);
+    assert.equal(restarted, false);
+    assert.deepEqual(work.calls, ["gate closed", "busy", "gate open"]);
+    assert.deepEqual(dialog.asked, [{ items: [item], intent: "restart-host" }]);
+  });
+}
+
+test("a confirmed Host restart stops work, restarts, then reopens admission", async () => {
+  const work = fakeWork({ answers: [[REPLY], []] });
+  const order = [];
+  const originalGate = work.setGate;
+  work.setGate = async (open) => { order.push(open ? "gate open" : "gate closed"); await originalGate(open); };
+  const originalStop = work.stopAll;
+  work.stopAll = async () => { order.push("stop"); await originalStop(); };
+  const guard = exitWork({ work, dialog: fakeDialog(true), lines: [] });
+  assert.equal(await guard.requestRestart("restart-host", async () => { order.push("restart"); }), true);
+  assert.deepEqual(order, ["gate closed", "stop", "restart", "gate open"]);
+  assert.equal(guard.approval, "none");
+});
+
+test("a failed Host restart restores admission", async () => {
+  const work = fakeWork({ answers: [[]] });
+  const guard = exitWork({ work, dialog: fakeDialog(true), lines: [] });
+  assert.equal(await guard.requestRestart("restart-host", async () => { throw new Error("boot failed"); }), false);
+  assert.deepEqual(work.calls, ["gate closed", "busy", "gate open"]);
+});
+
+test("a Host that answers nothing is restarted all the same: that is what the restart is for", async () => {
+  const work = {
+    busy: async () => { throw new Error("ECONNREFUSED"); },
+    setGate: async () => { throw new Error("ECONNREFUSED"); },
+    stopAll: async () => { throw new Error("ECONNREFUSED"); },
+  };
+  const dialog = fakeDialog(true);
+  let restarted = false;
+  const guard = exitWork({ work, dialog, lines: [] });
+  assert.equal(await guard.requestRestart("restart-host", async () => { restarted = true; }), true);
+  assert.equal(restarted, true);
+  assert.deepEqual(dialog.asked, []);
+  assert.equal(guard.approval, "none");
+});
+
+test("a whole-app relaunch keeps the gate closed and counts as the person's exit", async () => {
+  const work = fakeWork({ answers: [[]] });
+  const guard = exitWork({ work, dialog: fakeDialog(true), lines: [] });
+  assert.equal(await guard.requestRestart("relaunch", () => undefined, true), true);
+  assert.deepEqual(work.calls, ["gate closed", "busy"]);
+  assert.equal(guard.approval, "user");
+});

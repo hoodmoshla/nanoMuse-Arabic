@@ -85,8 +85,8 @@ android {
         applicationId = "io.github.nanomuse.arabic"
         minSdk = 26
         targetSdk = 35
-        versionCode = 48
-        versionName = "1.0.5"
+        versionCode = 49
+        versionName = "1.0.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -153,6 +153,12 @@ android {
         // rather than the name. What "gz" did do was tell aapt2 not to compress an asset it had
         // already unpacked, which is how a ~100 MB tar ends up stored raw inside the APK.
         noCompress += listOf("tar.gz", "proot-aarch64")
+        // nanoMuse: a warm arm64 build leaves sandbox payloads in the shared assets directory.
+        if (project.findProperty("nm.abi") == "x86_64") {
+            // An explicit list replaces AGP's defaults, so retain its normal hidden-file filters.
+            ignoreAssetsPatterns += "!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~".split(":")
+            ignoreAssetsPatterns += listOf("proot-aarch64", "alpine-minirootfs.tar.gz", "alpine-minirootfs.tar")
+        }
     }
 
     testOptions {

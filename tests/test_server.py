@@ -17,8 +17,9 @@ from fastapi.testclient import TestClient
 
 from nanomuse.config import Settings
 from nanomuse.llm import MockLLM
-from nanomuse.schema import Function, LLMResponse, ToolCall
+from nanomuse.schema import Function, LLMResponse, Message, ToolCall
 from nanomuse.server import create_app
+from nanomuse.server.events import Timeline
 from nanomuse.server.service import MuseService, _parse_ideas
 from nanomuse.server.webui import current_thread
 
@@ -556,6 +557,41 @@ def test_use_cloud_this_time_runs_one_turn_on_the_account(server, settings: Sett
     notice = events_of(client, kind="notice")[-1]
     assert notice["level"] == "error" and notice["model_used"] == "relay-chat-model"
     assert service.threads["main"].agent.llm is llm
+
+
+def test_cloud_turn_queued_behind_gated_turn_stays_separate(server, settings, monkeypatch):
+    """A per-turn client at the inbox head must not be folded into the active model call."""
+    from nanomuse.cloud import CLOUD_KEY
+    from nanomuse.server import service as service_module
+
+    client, service, _ = server
+    gate = threading.Event()
+    own = _GatedLLM([LLMResponse(content="own reply")], gate)
+    cloud = _GatedLLM([LLMResponse(content="cloud reply")], threading.Event())
+    cloud.gate.set()
+    service.app.llm = own
+    service.threads["main"].agent.llm = own
+    service.app.vault.set(CLOUD_KEY, "cloud-key")
+    service.hub.chat_models = ["cloud-model"]
+    monkeypatch.setattr(service_module, "create_llm", lambda *_args, **_kwargs: cloud)
+
+    client.post("/api/threads/main/send", json={"text": "first"})
+    wait_for(lambda: own.asking)
+    queued = client.post("/api/threads/main/send", json={"text": "second", "via": "cloud"}).json()[
+        "event"
+    ]
+    assert queued["model_used"] == "cloud-model"
+    gate.set()
+    wait_idle(service)
+
+    assert len(own.calls) == 1 and len(cloud.calls) == 1
+    assert [m.content for m in cloud.calls[0]["messages"] if m.role.value == "user"][-1] == "second"
+    wait_for(lambda: cloud.closed)
+    replies = events_of(client, kind="assistant")
+    assert [(r["text"], r.get("model_used")) for r in replies[-2:]] == [
+        ("own reply", None),
+        ("cloud reply", "cloud-model"),
+    ]
 
 
 class _GatedLLM(MockLLM):
@@ -1559,9 +1595,13 @@ def test_workspace_scan_ignores_only_excludes_inside_it(tmp_path: Path):
 def test_html_artifacts_are_served_sandboxed(server, settings: Settings):
     client, _, _ = server
     (settings.agent.workspace / "page.html").write_text("<script>alert(1)</script>", "utf-8")
-    r = client.get("/api/files/page.html")
-    assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")
-    assert "sandbox" in r.headers["content-security-policy"]
+    (settings.agent.workspace / "drawing.svg").write_text("<svg></svg>", "utf-8")
+    for name in ("page.html", "drawing.svg"):
+        r = client.get(f"/api/files/{name}")
+        assert r.status_code == 200
+        # an opaque origin (no token, no API), scripts and pop-ups allowed: a page the agent
+        # wrote may still load a chart library from a CDN or ask a public API for its data
+        assert r.headers["content-security-policy"] == "sandbox allow-scripts allow-popups"
     (settings.agent.workspace / "notes.md").write_text("# hi", "utf-8")
     assert "content-security-policy" not in client.get("/api/files/notes.md").headers
 
@@ -1756,8 +1796,10 @@ def test_reminders_fire_in_their_chat_and_are_pushed_once(server, monkeypatch):
         )
     )
     fired = client.post(f"/api/reminders/{items[0]['id']}/fire").json()
-    assert fired["status"] == "done" and fired["fired"] == 1 and fired["next_at"] is None
+    assert fired["status"] == "active" and fired["fired"] == 0, "claim is not completion"
     wait_idle(service, side["id"])
+    fired = client.get("/api/reminders?all=1").json()[-1]
+    assert fired["status"] == "done" and fired["fired"] == 1 and fired["next_at"] is None
     notice = [e for e in events_of(client, side["id"], "notice") if e.get("source") == "reminder"]
     assert notice and notice[-1]["text"] == "Reminder: call mum"
     said = events_of(client, side["id"], "assistant")[-1]
@@ -1882,6 +1924,66 @@ def test_timeline_survives_restart(server, settings: Settings):
     assert texts == ["remember this", "persisted"]
     # and the model context was restored as well
     assert [m.role.value for m in fresh.threads["main"].agent.messages] == ["user", "assistant"]
+
+
+async def test_timeline_flush_cannot_be_overwritten_by_an_older_async_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    timeline = Timeline("main", tmp_path / "main.json")
+    original_write = timeline._write
+    old_started = threading.Event()
+    release_old = threading.Event()
+
+    def controlled_write(payload: str, version: int) -> None:
+        if version == 1:
+            old_started.set()
+            release_old.wait(timeout=5)
+        original_write(payload, version)
+
+    monkeypatch.setattr(timeline, "_write", controlled_write)
+    timeline.add({"type": "user", "text": "old"})
+    assert timeline._flush_handle is not None
+    timeline._flush_handle.cancel()
+    timeline._flush_handle = None
+    timeline._flush_later(asyncio.get_running_loop())
+    old_write = timeline._writing
+    assert old_write is not None
+    await asyncio.to_thread(old_started.wait, 5)
+
+    timeline.add({"type": "assistant", "text": "latest"})
+    timeline.flush()
+    release_old.set()
+    await old_write
+
+    stored = json.loads(timeline.path.read_text("utf-8"))
+    assert [event["text"] for event in stored["events"]] == ["old", "latest"]
+
+
+def test_session_write_failure_keeps_the_previous_json_and_recovers(
+    server, monkeypatch: pytest.MonkeyPatch
+):
+    _, service, _ = server
+    agent = service.threads["main"].agent
+    assert agent.session_file is not None
+    agent.messages = [Message.user("before")]
+    agent._save_session()
+    previous = agent.session_file.read_text("utf-8")
+
+    agent.messages.append(Message.assistant("after"))
+    real_replace = os.replace
+
+    def fail_replace(source: str | os.PathLike[str], target: str | os.PathLike[str]) -> None:
+        raise OSError("simulated replace failure")
+
+    monkeypatch.setattr("nanomuse.agent.core.os.replace", fail_replace)
+    agent._save_session()
+    assert agent.session_file.read_text("utf-8") == previous
+    assert list(agent.session_file.parent.glob(f".{agent.session_file.name}.*.tmp")) == []
+
+    monkeypatch.setattr("nanomuse.agent.core.os.replace", real_replace)
+    agent._save_session()
+    stored = json.loads(agent.session_file.read_text("utf-8"))
+    assert [message["content"] for message in stored["messages"]] == ["before", "after"]
 
 
 # ----------------------------------------------------------------------------- push
@@ -2240,6 +2342,7 @@ def test_triggers_start_work_from_mail_events_and_webhooks(
         "mail": False,
         "event": False,
         "hook": True,
+        "device": False,
     }
     assert client.get("/api/upcoming").json()["triggers"]["items"] == []
 
@@ -2301,8 +2404,13 @@ def test_triggers_start_work_from_mail_events_and_webhooks(
         f"/api/hooks/{hook['id']}?key={hook['secret']}",
         json={"deploy": 42, "status": "ok"},
     )
-    assert r.status_code == 200 and r.json() == {"ok": True, "trigger": hook["id"], "fired": 1}
+    assert r.status_code == 200 and r.json() == {
+        "ok": True,
+        "trigger": hook["id"],
+        "fired": 0,
+    }
     wait_idle(service, side["id"])
+    assert client.get("/api/triggers").json()["items"][0]["fired"] == 1
     notice = [e for e in events_of(client, side["id"], "notice") if e.get("source") == "trigger"]
     assert notice and notice[-1]["text"] == "Webhook: deploy"
     said = events_of(client, side["id"], "assistant")[-1]
@@ -2494,8 +2602,9 @@ def test_triggers_start_work_from_mail_events_and_webhooks(
     # --- run now, cancel ------------------------------------------------------------------
     llm.script.append(LLMResponse(content="Test run done."))
     r = client.post(f"/api/triggers/{mail['id']}/fire")
-    assert r.status_code == 200 and r.json()["fired"] == 2
+    assert r.status_code == 200 and r.json()["fired"] == 1
     wait_idle(service, "main")
+    assert client.get("/api/triggers").json()["items"][-1]["fired"] == 2
     assert client.delete(f"/api/triggers/{mail['id']}").json()["status"] == "cancelled"
     assert client.delete(f"/api/triggers/{mail['id']}").status_code == 409
     assert client.delete("/api/triggers/t_nope").status_code == 404
@@ -2533,3 +2642,160 @@ def test_static_app_caching_headers(server):
     # the app's own routes, not the HTML, answer a wrong API path
     r = plain.get("/api/no-such-thing")
     assert r.status_code == 404 and "no such endpoint" in r.json()["detail"]
+
+
+# --------------------------------------------------------------------- the data export (#488)
+def test_data_export_is_the_agent_data_as_a_zip(server):
+    """*Download your agent data* for the web (parity note 37): the runtime answers the
+    token with the zip itself, and a credential is never inside it."""
+    import io
+    import zipfile
+
+    client, service, _ = server
+    service.app.triggers.create("mail", "summarise it", match="landlord")
+
+    r = client.get("/api/data/export")
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == "application/zip"
+    assert 'attachment; filename="nanomuse-data-' in r.headers["content-disposition"]
+    assert "no-store" in r.headers["cache-control"]  # who you are is in it: never cached
+
+    with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+        names = z.namelist()
+        readme = z.read("README.txt").decode()
+    assert "README.txt" in names and "triggers.db" in names
+    # the chats go in as the runtime keeps them, index first (written at startup)
+    assert "threads/index.json" in names
+    # a credential is never in the file, and neither are the logs or the person's own files
+    for secret in ("vault.enc", "vault.key", "server_token", "push-vapid.json"):
+        assert secret not in names
+    assert not [n for n in names if n.startswith(("logs/", "workspace/"))]
+    assert "triggers.db" in readme and "vault.enc" in readme  # the README names what is left out
+
+    # the chats go in once there are any
+    (service.settings.data_dir / "threads").mkdir(parents=True, exist_ok=True)
+    (service.settings.data_dir / "threads" / "main.json").write_text('{"messages": []}', "utf-8")
+    with zipfile.ZipFile(io.BytesIO(client.get("/api/data/export").content)) as z:
+        assert "threads/main.json" in z.namelist()
+
+    # the token is the credential for this as for everything else
+    assert TestClient(client.app).get("/api/data/export").status_code == 401
+
+
+def test_data_export_does_not_follow_symlinks(tmp_path: Path):
+    """An allowed name cannot smuggle an excluded key or another directory into the zip."""
+    import io
+    import zipfile
+
+    from nanomuse.server.data_export import agent_data_zip
+
+    data = tmp_path / "data"
+    outside = tmp_path / "outside"
+    data.mkdir()
+    outside.mkdir()
+    secret = outside / "secret"
+    secret.write_text("not for export", "utf-8")
+    try:
+        (data / "memory.db").symlink_to(secret)
+        (data / "threads").symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"this platform cannot create symlinks: {exc}")
+
+    with zipfile.ZipFile(io.BytesIO(agent_data_zip(data))) as z:
+        assert z.namelist() == ["README.txt"]
+
+
+# --------------------------------------------------------------------- the fourth kind (#486)
+def test_a_device_coming_online_reaches_the_feed(server):
+    """A device of the account coming online runs the standing instruction in the chat it
+    was set from, once per arrival, with one entry in the Feed."""
+    from nanomuse.cloud import CLOUD_KEY
+
+    client, service, llm = server
+    assert service.app.trigger_kinds()["device"] is False
+    with pytest.raises(ValueError, match="hub"):
+        service.create_trigger("device", "tell me")
+    service.app.vault.set(CLOUD_KEY, "cloud-key-for-the-test")
+    assert service.app.trigger_kinds()["device"] is True
+    trig = service.create_trigger("device", "tell me when the phone is back", match="pixel")
+    assert trig.kind == "device" and trig.thread == "main"
+    llm.script.append(LLMResponse(content="The phone is back online."))
+
+    fired = client.portal.call(
+        lambda: service.device_came_online({"id": "phone-1", "name": "Pixel", "kind": "phone"})
+    )
+    assert [t.id for t in fired] == [trig.id]
+    wait_idle(service, "main")
+    notice = [e for e in events_of(client, "main", "notice") if e.get("source") == "trigger"]
+    assert notice and notice[-1]["text"] == "Device online: Pixel"
+    said = events_of(client, "main", "assistant")[-1]
+    assert said["about"] == "Device online: Pixel" and "back online" in said["text"]
+    # who is around is private data, like the inbox: the thread is tainted for egress
+    assert service.app.sentinel.tainted_for("main")
+    assert service.app.triggers.get(trig.id).fired == 1  # type: ignore[union-attr]
+
+    # a device that does not match the words fires nothing at all
+    assert (
+        client.portal.call(
+            lambda: service.device_came_online({"id": "tab-1", "name": "Tab", "kind": "tablet"})
+        )
+        == []
+    )
+    wait_idle(service, "main")
+
+    # and without the hub there is nothing to watch: the kind is refused, by the API and
+    # by the tool the agent uses
+    service.settings.hub.enabled = False
+    assert service.app.trigger_kinds()["device"] is False
+    with pytest.raises(ValueError, match="hub"):
+        service.create_trigger("device", "tell me")
+
+
+def test_device_trigger_shows_in_the_triggers_view(server):
+    from nanomuse.cloud import CLOUD_KEY
+
+    client, service, _ = server
+    service.app.vault.set(CLOUD_KEY, "cloud-key-for-the-test")
+    service.create_trigger("device", "tell me", match="pixel")
+    view = client.get("/api/triggers").json()
+    assert view["available"]["device"] is True
+    item = view["items"][0]
+    assert item["kind"] == "device" and item["lead_minutes"] == 0 and item["secret"] == ""
+
+
+def test_the_hub_devices_frame_fires_them(server):
+    """The hub's `devices` frame, as the hub client hands it over: what was already online
+    when it arrived is not an arrival; the drop and the return are. A reconnect gets a new
+    baseline, so devices that came online while this runtime was away do not fire."""
+    from nanomuse.cloud import CLOUD_KEY
+
+    client, service, llm = server
+    service.app.vault.set(CLOUD_KEY, "cloud-key-for-the-test")
+    trig = service.create_trigger("device", "tell me when the phone is back", match="pixel")
+    me = {"id": service.hub.device_id, "name": "Desk", "kind": "computer", "online": True}
+    phone = {"id": "phone-1", "name": "Pixel", "kind": "phone", "online": True}
+
+    client.portal.call(lambda: service.hub._on_devices([me, phone]))  # the welcome frame
+    assert service.app.triggers.get(trig.id).fired == 0  # type: ignore[union-attr]
+
+    client.portal.call(lambda: service.hub._on_devices([me, {**phone, "online": False}]))
+    assert service.app.triggers.get(trig.id).fired == 0  # type: ignore[union-attr]
+
+    llm.script.append(LLMResponse(content="The phone is back online."))
+    client.portal.call(lambda: service.hub._on_devices([me, phone]))
+    wait_idle(service, "main")
+    assert service.app.triggers.get(trig.id).fired == 1  # type: ignore[union-attr]
+
+    # A connection drop loses the transitions while this runtime is away. Its next welcome
+    # frame is a baseline, not a claim that every currently-online device just arrived.
+    client.portal.call(lambda: service.hub._on_devices([me, {**phone, "online": False}]))
+    service.hub._hub_state_changed("connecting", "")
+    client.portal.call(lambda: service.hub._on_devices([me, phone]))
+    wait_idle(service, "main")
+    assert service.app.triggers.get(trig.id).fired == 1  # type: ignore[union-attr]
+    notice = [e for e in events_of(client, "main", "notice") if e.get("source") == "trigger"]
+    assert notice and notice[-1]["text"] == "Device online: Pixel"
+    # an unchanged frame brings nothing
+    client.portal.call(lambda: service.hub._on_devices([me, phone]))
+    wait_idle(service, "main")
+    assert service.app.triggers.get(trig.id).fired == 1  # type: ignore[union-attr]

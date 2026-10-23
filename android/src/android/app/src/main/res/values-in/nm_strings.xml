@@ -331,6 +331,16 @@
     <string name="nm_avatar_retry">Coba lagi</string>
     <string name="nm_avatar_describe_title">Gambarkan wajah baru</string>
     <string name="nm_avatar_describe_body">Satu kalimat sudah cukup: apa wujudnya, apa yang dipakainya, bagaimana kesannya. Pilih gaya, dan model gambarmu menggambar empat pilihan.</string>
+    <string name="nm_avatar_preset_moss_name">Kurir Lumut</string>
+    <string name="nm_avatar_preset_moss_description">kurir kecil berlapis lumut dengan telinga daun dan tas kanvas polos</string>
+    <string name="nm_avatar_preset_tide_name">Perakit Pasang</string>
+    <string name="nm_avatar_preset_tide_description">axolotl perakit hijau busa laut dengan insang koral dan kantong alat polos</string>
+    <string name="nm_avatar_preset_dusk_name">Ngengat Senja</string>
+    <string name="nm_avatar_preset_dusk_description">ngengat nila yang tenang dengan bintik persik pada sayap, kerah krem, dan kacamata bulat</string>
+    <string name="nm_avatar_preset_copper_name">Biji Ek Tembaga</string>
+    <string name="nm_avatar_preset_copper_description">robot kecil berbentuk biji ek dari tembaga dengan panel hijau sage dan syal biru redup</string>
+    <string name="nm_avatar_preset_a11y">Pilihan %1$d: %2$s, %3$s</string>
+    <string name="nm_avatar_preset_ai">Inspirasi buatan AI</string>
     <string name="nm_avatar_default_description">Bayi naga gempal berwarna kuning pucat dengan tanduk oranye kecil dan sayap kecil terlipat</string>
     <string name="nm_avatar_style_flat">Datar</string>
     <string name="nm_avatar_style_clay">Tanah liat 3D</string>
@@ -357,6 +367,8 @@
     <string name="nm_own_clip_choose">Pilih klip</string>
     <string name="nm_own_clip_replace">Ganti klip</string>
     <string name="nm_own_clip_default">Wajah bawaan</string>
+    <!-- The per-mood row of the own clip: takes that mood's clip away, the others stay -->
+    <string name="nm_own_clip_mood_remove">Hapus</string>
     <string name="nm_own_clip_menu">Klip Anda sendiri…</string>
     <string name="nm_own_clip_preview_title">Pratinjau</string>
     <string name="nm_own_clip_preview_body">Beginilah klip diputar sebagai wajah: tanpa suara, berulang, dipotong ke lingkaran.</string>
@@ -1111,7 +1123,6 @@
     <string name="nm_cloud_provider_no_delete">Penyedia ini adalah akun nanoMuse Cloud Anda. Matikan di atas untuk berhenti memakai modelnya; untuk keluar, buka Pengaturan › nanoMuse Cloud.</string>
     <string name="nm_welcome_own_key">Pakai kunci API sendiri saja</string>
     <string name="nm_useit_title">Pakai untuk</string>
-    <string name="nm_useit_body">Pilih apa yang ditangani kunci ini. Sisanya tetap ditangani nanoMuse Cloud.</string>
     <string name="nm_useit_body_signed_out">Pilih apa yang ditangani kunci ini.</string>
     <string name="nm_useit_use">Pakai</string>
     <string name="nm_useit_not_now">Nanti saja</string>

@@ -70,6 +70,12 @@ Applied by `python scripts/rebrand.py` (idempotent; run after every upstream pul
 
 Ours, in `NanoMuse/`:
 
+- **Cache-stable agent instructions.** The system prompt keeps its fixed tool and safety guidance
+  in a stable prefix, then appends model capabilities, skills and MCP metadata, memory,
+  `USER.md` and conversation steering, and finally the current time, language and available-model
+  count as a deterministic volatile suffix. A memory write or hourly time refresh no longer
+  invalidates the static instructions for providers that support prefix caching; fallback models
+  rebuild the same layout.
 - **nanoMuse Cloud.** *Providers* opens with a "nanoMuse Cloud" row: a phone number or an
   e-mail address, a code, and the relay ([cloud.md](cloud.md)) is an ordinary OpenAI-compatible
   provider in the app, with a model group of its own that becomes the default when there is none.
@@ -101,6 +107,8 @@ Ours, in `NanoMuse/`:
   before it is used, kept on that phone only under `Application Support/nanomuse/avatar/own-clip.mp4`
   and left out of the iCloud and computer backups with its still, and *Default face* removes it;
   the section in [avatar.md](avatar.md) has the fallback rule).
+  After choosing a video, the photo picker closes before the preview appears. The preview stays
+  open until *Use* or *Cancel* is tapped, so closing animations cannot discard the pending clip.
   The drawer holds the sessions, search,
   a new side chat, *Pin as the main chat*, *All chats* and the nanoMuse settings; it opens from
   the round button and, on the main chat, from a swipe in at the left edge
@@ -153,17 +161,17 @@ Ours, in `NanoMuse/`:
   `coding.*` actions, a message to any of them), **Scheduled tasks**, **System files** (SOUL,
   GLOBAL, the diary, the feed's instruction, the routines' schedule, *Import memory* from another
   assistant), Connectors, Data controls, the two shell switches, *Show the welcome again*.
-- **Models (0.1.34)** (`NanoMuseModels.swift`): the relay's menu opens on `deepseek-v4.1-flash`
-  (the one marked recommended *for chat*; `qwen3.8-27b` is the hands' model and never the chat
-  default); a pick made in the chat's picker moves to the front of the Cloud group so new chats
+- **Models (0.1.34)** (`NanoMuseModels.swift`): the relay's menu opens on the model marked
+  recommended *for chat*; the hosted relay currently recommends the same multimodal
+  `Qwen/Qwen3.6-27B-FP8` for chat and screen operation. A pick made in the chat's picker moves to the front of the Cloud group so new chats
   follow it, as Android's `followPick`. DeepSeek ids are text-only unless they name `v4.1` or
   later, `vision` or `ocr`: a `// nanoMuse:` step at the top of `LLMModel.withInferredModality()`.
 - **Models as four slots (0.1.41)** (`NanoMuseModelSlots.swift`, `NanoMuseModelsView.swift`;
   Android `ui/models/ModelsScreen.kt`): the first card of *Settings → nanoMuse* is *Models* and
   opens four rows: *Chat*, *Operating the screen* (disabled on iPhone, *Not on iPhone*, *Your
   computer uses its own setting.*), *Making pictures*, *Making clips*, each showing
-  `<provider> · <model>` and opening a picker grouped *nanoMuse Cloud* first (the relay's
-  recommended one marked *Recommended*) and then one group per provider of your own that can do
+  `<provider> · <model>` and opening a picker grouped *nanoMuse Cloud* first only when the
+  relay's live menu covers that row (with its recommendation marked *Recommended*) and then one group per provider of your own that can do
   it; an empty row says what is missing and offers *Add a provider*, and so does the page's last
   row; under the pictures and clips pickers a key the catalogue says can draw but the phone
   cannot drive (`NanoMuseModelSlots.notDriven`: only a DashScope host is) is named in one
@@ -174,9 +182,9 @@ Ours, in `NanoMuse/`:
   side chats answered through the key); the page says *Applies to the main chat and to new
   chats; a side chat keeps its model.*; a pick made in a chat's own picker sticks the same way,
   for any provider, not only Cloud. Pictures and clips resolve in one order (your choice, else the chat
-  provider's own default when it is a Model Studio key that draws, else nanoMuse Cloud when
-  signed in, else the first key that can), so Cloud is no longer passed over for a Bailian key
-  you did not pick; the image and video models come from the catalogue's `defaults`, not from
+  provider's own default when it is a Model Studio key that draws, else a signed-in relay only
+  when its live menu offers the media kind, else the first key that can). The hosted Cloud
+  offers no media generation, so these rows require a key of your own; the image and video models come from the catalogue's `defaults`, not from
   names in the code. The pictures and clips pickers open with an *Automatic* entry (*Currently
   〈provider · model〉*) that forgets the stored choice and lets the slot follow that order
   again; the clips picker keeps *Off* under it. A group shows at most eight rows (the
@@ -188,10 +196,11 @@ Ours, in `NanoMuse/`:
   After a key is saved, `NanoMuseVendorSheet` shows *Use it for*: one switch
   per slot the key covers (pictures and clips only on a DashScope host, the screen never on
   iPhone), all on; *Use it* moves the ticked slots to the provider's defaults, *Not now* changes
-  nothing, and saving no longer switches anything by itself. When a model of your own fails, the
-  failure card (and upstream's plain error) gains *Use nanoMuse Cloud this time* while signed
-  in: the retry runs on the relay's chat model (`NanoMuseCloudOnce`, read at the top of
-  `resolveCurrentEntry()`), and no slot changes. The relay's menu is kept on the phone at sign-in
+  nothing, and saving no longer switches anything by itself. When a chat model of your own
+  fails, the failure card (and upstream's plain error) gains *Use nanoMuse Cloud this time*
+  while signed in: the retry runs on the relay's chat model (`NanoMuseCloudOnce`, read at the
+  top of `resolveCurrentEntry()`), and no slot changes. Media failures have no Cloud retry.
+  The relay's menu is kept on the phone at sign-in
   and refreshed when the page opens. *Image & video models* stays as a shortcut with the animate
   toggle and the clip buttons.
 - **Connections across devices (0.1.34)** (`NanoMuseSharedConnectors` in
@@ -212,7 +221,13 @@ Ours, in `NanoMuse/`:
   privacy page, deletion with a confirmation. **Reach** (`NanoMuseReach.swift`): a sheet per device
   of the account (open a link, send a note, a shell line, a screenshot) over the hub.
   **A task for another device** (`NanoMuseDeviceMention.swift`, `NanoMuseRemoteApproval.swift`):
-  a message that starts with `@〈device〉` goes to that device's Muse as a hub `task`; when a step
+  a message that starts with `@〈device〉` goes to that device's Muse as a hub `task` (the `@` menu
+  lists the online devices above the files when the `@` opens the message). While it runs, the
+  reply is drawn in the chat (`NanoMuseDeviceReply.swift`): "〈device〉 is working…", each step as
+  a capsule, what that Muse says as it comes, the answer in place at the end; the chat is busy
+  meanwhile, its stop ends the task there too, and a line queued meanwhile goes when it ends.
+  A timeout or disconnect marks unfinished steps failed; Stop cancels them. A final answer
+  does not mark a step successful unless its result arrived. When a step
   there needs a yes, the `approval` event is answered here, where the task was typed
   ([hub.md](hub.md)), on a card with the Android phone's four answers: *Allow once*, *Allow for
   this chat* (held in memory for that chat), *Always allow this on 〈device〉* (the same step on
@@ -314,8 +329,9 @@ Ours, in `NanoMuse/`:
 - **Motion clips (0.1.35)** (`NanoMuseVideoGen.swift`, `NanoMuseAvatarMotion.swift`,
   `NanoMuseMediaModels.swift`; Android `avatar/VideoGen.kt`, `avatar/AvatarMotion.kt`): a drawn
   face gets four 4-second clips (idle, working, waiting, happy) from `wan2.2-i2v-flash`
-  (DashScope's async API through the relay, or your own Bailian key), the phone's prompts word
-  for word, kept per device under `avatar/motion/`; the face plays them with an `AVQueuePlayer`
+  through your own Bailian key (or a self-hosted relay whose operator explicitly enabled the
+  legacy media proxy; the public Cloud does not), the phone's prompts word for word, kept per
+  device under `avatar/motion/`; the face plays them with an `AVQueuePlayer`
   and an `AVPlayerLooper` (suspended in the background), the dragon's clips come from the bundle.
   *Image & video models* lists the models, *Animate the avatar after a change* (on by default)
   and *Make / Redo clips*; the studio's cost estimate counts the clips.
@@ -355,9 +371,10 @@ Ours, in `NanoMuse/`:
   list keeps the chat's full height and is passed a bottom inset of the column's measured height
   plus the bar, so the rows scroll under the column and the bar and the last row stops above the
   column at rest; the `/` and `@` popup shares a `VStack` with the column and so stands on its top
-  edge by layout. Behind the column, Android's scrolling fade (`nmBottomFade`): once the list is
-  scrolled away from the latest row, a 90 pt gradient of the canvas colour and the solid canvas
-  behind the column, stopping above the bar so the glass keeps its rows. There is no second host to
+  edge by layout. Behind the composer pill, Android's rounded vignette (`NanoMuseComposerVignette`):
+  once the list is scrolled away from the latest row, a 90 pt rounded halo of the canvas colour
+  follows the composer pill's 26 pt contour and fades to clear in the gap above the bar so the
+  glass keeps its rows without a solid rectangular strip. There is no second host to
   switch to. The watch stays as the last net (a column that detaches or measures 0
   while the chat is on screen is rebuilt through `.id(rebuildTick)`, at most twice per appearance so
   a mis-measured healthy composer cannot take the keyboard away repeatedly), and it keeps what it
@@ -559,8 +576,10 @@ Ours, in `NanoMuse/`:
   `MuseBottomBar`, #329 by @Ichiro786): the five tabs sit in a `Capsule` 12 pt above the bottom
   safe area, as wide as the composer above it (the same 16 pt margins; 420 pt at most on a compact
   width, which no phone reaches; on a regular width, the iPad, it is the chat column's width less
-  the margins, 728 pt, as the composer is, see the column note below), icons only, with the same
-  SF symbols, accessibility labels and selected trait as before. The pill is `.ultraThinMaterial` under the shell's surface tone at 55 percent opacity (the
+  the margins, 728 pt, as the composer is, see the column note below), icons only, with the five
+  tab shapes aligned to Android's `MuseBottomBar` (`bubble.left`, `doc.text`, `lightbulb`,
+  `checkmark.square`, and the three-shape `Category` glyph for Library) and the same accessibility
+  labels and selected trait as before. The pill is `.ultraThinMaterial` under the shell's surface tone at 55 percent opacity (the
   tint carries the contrast, the material carries the blur, as Android's 55 percent surface over its
   backdrop blur) with a 1 pt `NanoMuseTones.hairline` edge; the old full-width strip and its hairline
   on top are gone. The five tabs share the pill's width equally, each slot tappable across; the
@@ -875,7 +894,7 @@ what became of it here:
 | `community.StarPrompt`, `community.Nudges`: the star asks from the relay's policy | Done (0.1.35): `NanoMuseNudges.swift`, `NanoMuseStar` (the moments, the cooldown and the cap from `/v1/nudges`) |
 | `community.UpdateCheck`, the Version row | Done (0.1.35): `NanoMuseUpdateCheck.swift` (installed and latest, `nanomuse.cn/dl/index.json` then GitHub) |
 | `avatar.VideoGen`, `avatar.AvatarMotion`: the motion clips | Done (0.1.35): `NanoMuseVideoGen.swift`, `NanoMuseAvatarMotion.swift`, `NanoMuseMediaModels.swift` |
-| `nm.show_steps`: the agent's steps, on by default since 0.1.37 | 0.1.32: `NanoMuseSteps.swift`; finished messages keep to the conversation, a running one shows its steps |
+| `nm.show_steps`: the agent's steps, on by default since 0.1.37 | 0.1.32: `NanoMuseSteps.swift`; finished messages keep to the conversation, including after the main chat is reset or restored on launch; a running one shows its steps |
 | `connectors`: the catalogue, `SharedConnectors` | Done: `NanoMuseConnectors.swift` (0.1.33 the catalogue, 0.1.34 the other devices' entries) |
 | `ui.home`, `ui.chat`, `ui.settings`, `ui.profile`: the shell, header, agent page | Done: `NanoMuseShell.swift`, `NanoMuseHeader.swift`, `NanoMuseAgentPage.swift`, `NanoMuseSettings.swift`; 0.1.35 the Muse header on every room, the settings as Muse cards (`NanoMuseChrome.swift`, `NanoMuseAppearance.swift`) |
 | `avatar`: the drawn face, the chat-driven change, the studio | Done (0.1.34): `NanoMuseAvatarFlow.swift`, `NanoMuseAvatarStudio.swift`, `NanoMuseImageGen.swift` |
@@ -885,8 +904,9 @@ what became of it here:
 | `hands`: the phone's own screen | No equivalent: iOS does not let an app drive another. App Intents / Shortcuts are the door there |
 | Widgets | Upstream's `AgentWidget` as it is |
 
-Still to check on a device, in order: the first run end to end with a fresh account; a chat-driven
-avatar change through the relay and through a Bailian key, and the four clips it draws afterwards; a routine coming due with the app in
+Still to check on a device, in order: the first run end to end with a fresh account; confirm the
+hosted account's media entry points ask for an own provider, then make a chat-driven avatar change
+through a Bailian key and the four clips it draws afterwards; a routine coming due with the app in
 the background (does iOS grant the refresh on the tester's phone, and how often); a coding session
 against a computer of the account; the connectors list after a second device signs in.
 

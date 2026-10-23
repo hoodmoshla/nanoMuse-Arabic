@@ -331,6 +331,16 @@
     <string name="nm_avatar_retry">ลองใหม่</string>
     <string name="nm_avatar_describe_title">บรรยายใบหน้าใหม่</string>
     <string name="nm_avatar_describe_body">ประโยคเดียวก็พอ: มันคืออะไร สวมอะไร ให้ความรู้สึกแบบไหน เลือกสไตล์ แล้วโมเดลภาพของคุณจะวาดสี่แบบให้เลือก</string>
+    <string name="nm_avatar_preset_moss_name">ผู้ส่งสารมอส</string>
+    <string name="nm_avatar_preset_moss_description">ผู้ส่งสารตัวจิ๋วปกคลุมด้วยมอสนุ่ม มีหูรูปใบไม้และกระเป๋าผ้าใบเรียบ</string>
+    <string name="nm_avatar_preset_tide_name">ช่างแห่งสายน้ำ</string>
+    <string name="nm_avatar_preset_tide_description">แอกโซลอเติลช่างฝีมือสีฟองทะเล มีเหงือกสีปะการังและกระเป๋าเครื่องมือเรียบ</string>
+    <string name="nm_avatar_preset_dusk_name">ผีเสื้อราตรีสนธยา</string>
+    <string name="nm_avatar_preset_dusk_description">ผีเสื้อราตรีสีครามแสนสุขุม มีจุดสีพีชบนปีก ปกสีครีม และแว่นกลม</string>
+    <string name="nm_avatar_preset_copper_name">ลูกโอ๊กทองแดง</string>
+    <string name="nm_avatar_preset_copper_description">หุ่นกลทองแดงตัวเล็กรูปลูกโอ๊ก มีแผงสีเขียวเซจและผ้าพันคอสีน้ำเงินหม่น</string>
+    <string name="nm_avatar_preset_a11y">ตัวเลือก %1$d: %2$s, %3$s</string>
+    <string name="nm_avatar_preset_ai">ตัวอย่างแรงบันดาลใจที่สร้างโดย AI</string>
     <string name="nm_avatar_default_description">ลูกมังกรอ้วนกลมสีเหลืองอ่อน มีเขาสีส้มเล็ก ๆ และปีกเล็กที่พับอยู่</string>
     <string name="nm_avatar_style_flat">แฟลต</string>
     <string name="nm_avatar_style_clay">ดินปั้น 3D</string>
@@ -357,6 +367,8 @@
     <string name="nm_own_clip_choose">เลือกคลิป</string>
     <string name="nm_own_clip_replace">เปลี่ยนคลิป</string>
     <string name="nm_own_clip_default">ใบหน้าเริ่มต้น</string>
+    <!-- The per-mood row of the own clip: takes that mood's clip away, the others stay -->
+    <string name="nm_own_clip_mood_remove">เอาออก</string>
     <string name="nm_own_clip_menu">คลิปของคุณเอง…</string>
     <string name="nm_own_clip_preview_title">ดูตัวอย่าง</string>
     <string name="nm_own_clip_preview_body">เมื่อเป็นใบหน้าจะเล่นแบบนี้: ปิดเสียง วนซ้ำ ตัดเป็นวงกลม</string>
@@ -1111,7 +1123,6 @@
     <string name="nm_cloud_provider_no_delete">ผู้ให้บริการนี้คือบัญชี nanoMuse Cloud ของคุณ ปิดสวิตช์ด้านบนเพื่อเลิกใช้โมเดลของมัน หากต้องการออกจากระบบ ให้เปิด การตั้งค่า › nanoMuse Cloud</string>
     <string name="nm_welcome_own_key">ใช้คีย์ API ของตัวเองแทน</string>
     <string name="nm_useit_title">ใช้ทำอะไร</string>
-    <string name="nm_useit_body">เลือกว่าคีย์นี้จะรับผิดชอบอะไร ส่วนที่เหลือ nanoMuse Cloud ยังคงดูแล</string>
     <string name="nm_useit_body_signed_out">เลือกว่าคีย์นี้จะรับผิดชอบอะไร</string>
     <string name="nm_useit_use">ใช้</string>
     <string name="nm_useit_not_now">ไว้ก่อน</string>

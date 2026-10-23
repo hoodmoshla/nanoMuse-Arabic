@@ -3,10 +3,17 @@
 #
 #   scripts/should-publish.sh <event-name> [<publish-input>]
 #
-#   workflow_dispatch true   → true    a dispatch that asked for it
-#   workflow_dispatch false  → false   a dispatch that asked to build and verify only
-#   workflow_dispatch ""     → false   a dispatch with the input unset
-#   pull_request ""          → true    the run this workflow starts itself after a sync merge
+#   workflow_dispatch true    → true    a dispatch that asked for it
+#   workflow_dispatch false   → false   a dispatch that asked to build and verify only
+#   workflow_dispatch ""      → false   a dispatch with the input unset
+#   pull_request true|false|  → false   a pull request never publishes, even when
+#                                        the input asks and even when it is absent
+#
+# A pull request used to publish unconditionally. That is how a verify-only run on
+# codex/upstream-full-sync created tag v1.0.6.1 and a public release, although the
+# command line never passed --publish. The event name is not a request to publish.
+# A release after a merge is a workflow_dispatch, or a later job whose event is not
+# pull_request, and it still has to pass `true` on purpose.
 #
 # Why this is a script and not a GitHub expression, which is where it went wrong:
 #
@@ -26,7 +33,7 @@ event="${1:-}"
 input="$(printf '%s' "${2:-}" | tr '[:upper:]' '[:lower:]')"
 
 case "$event:$input" in
-  pull_request:*) echo true ;;
+  pull_request:*) echo false ;;
   *:true) echo true ;;
   *) echo false ;;
 esac

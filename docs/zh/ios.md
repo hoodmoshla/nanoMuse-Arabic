@@ -92,6 +92,8 @@ scripts/gen-ios-icons.py         the app icon and the four alternates, from asse
   先预览，只保存在这台手机的 `Application Support/nanomuse/avatar/own-clip.mp4`，连同它的
   静帧一起不进 iCloud 和电脑备份，*默认形象* 可移除；回退规则见 [avatar.md](avatar.md)
   里的那一节）。
+  选好视频后，照片选择器会先收起，再显示预览。预览需要明确点击「使用」或「取消」才能关闭，
+  避免切换窗口的动画误删还没确认的视频。
   抽屉里放着会话、搜索、新建旁聊、*设为主要聊天*、*全部对话* 和 nanoMuse 设置；点圆形按钮
   打开，在主要聊天里从左边缘向右滑也打开（`NanoMuseEdgeSwipe.swift`，挂在窗口上的屏幕边缘
   手势，和 Android 聊天页上的抽屉一样；推出来的旁聊仍然用系统的返回手势）。
@@ -134,16 +136,16 @@ scripts/gen-ios-icons.py         the app icon and the four alternates, from asse
   Cursor / Codex / Claude Code 会话，可以给任何一个发消息）、**定时任务**、**系统文件**
   （SOUL、GLOBAL、日记、动态的指令、例程的时间表、从别的助手 *导入记忆*）、连接器、数据控制、
   外壳的两个开关、*重新显示欢迎页*。
-- **模型（0.1.34）**（`NanoMuseModels.swift`）：中继的菜单打开时停在 `deepseek-v4.1-flash`
-  （标为 *聊天* 推荐的那个；`qwen3.8-27b` 是手的模型，从不作为聊天默认）；在聊天的选择器里
+- **模型（0.1.34）**（`NanoMuseModels.swift`）：中继的菜单打开时停在标为 *聊天* 推荐的模型；
+  项目托管中继目前给聊天和操作屏幕都推荐同一个多模态 `Qwen/Qwen3.6-27B-FP8`。在聊天的选择器里
   选了哪个，哪个就挪到 Cloud 组的最前面，新聊天跟着它走，和 Android 的 `followPick` 一样。
   DeepSeek 的 id 一律视为纯文本，除非名字里有 `v4.1` 及以后、`vision` 或 `ocr`；这是
   `LLMModel.withInferredModality()` 顶上的一步 `// nanoMuse:`。
 - **模型分成四个位置（0.1.41）**（`NanoMuseModelSlots.swift`、`NanoMuseModelsView.swift`；
   对应 Android `ui/models/ModelsScreen.kt`）：*设置 → nanoMuse* 的第一张卡片是 *模型*，打开
   四行：*对话*、*操作屏幕*（iPhone 上禁用，显示 *不在 iPhone 上*，副标题 *电脑用它自己的
-  设置。*）、*生成图片*、*生成视频*，每行显示 `<服务商> · <模型>`，点进去是一个选择器：先是
-  *nanoMuse Cloud* 一组（中继推荐的那个标 *推荐*），然后每个能干这件事的自有服务商一组；
+  设置。*）、*生成图片*、*生成视频*，每行显示 `<服务商> · <模型>`，点进去是一个选择器：只在
+  中继实际菜单覆盖的行里先列 *nanoMuse Cloud*（中继推荐的那个标 *推荐*），然后每个能干这件事的自有服务商一组；
   空着的行说明缺什么并给出 *添加服务商*，页面最后一行也是它；图片和视频的选择器下方会把
   目录里说能画图、手机却驱动不了的 key（`NanoMuseModelSlots.notDriven`：只有 DashScope 主机
   能）用一句「此处不提供：……」点名，并说明它在哪里能用。选了对话模型，就把新对话的
@@ -152,8 +154,8 @@ scripts/gen-ios-icons.py         the app icon and the four alternates, from asse
   不是新对话，0.1.41 上选了自己的 key 之后旁聊走 key、主要聊天却还留在 nanoMuse Cloud），
   页面提示 *对主要聊天和新对话生效；旁聊保留自己的模型。*；在聊天自己的选择器里选的也
   同样生效，不再只限 Cloud。图片和视频按一个顺序决定（你的选择，否则对话服务商自己的默认（当它是能画图的
-  百炼 key 时），否则已登录的 nanoMuse Cloud，否则第一个能干的 key），所以 Cloud 不会再被
-  一把你没选的百炼 key 挤掉；图片和视频模型来自目录的 `defaults`，不再写在代码里。图片和
+  百炼 key 时），否则是实际菜单提供这类媒体能力的已登录中继，否则第一个能干的 key）。项目
+  托管 Cloud 不提供媒体生成，所以这两行必须用你自己的 key；图片和视频模型来自目录的 `defaults`，不再写在代码里。图片和
   视频的选择器最上面有一项 *自动*（*当前为 〈服务商 · 模型〉*），选它就忘掉存下的选择，让这
   个位置重新按上面的顺序走；视频选择器的 *关闭* 留在它下面。每组最多先显示八行（这个位置
   在目录里的默认模型排第一，然后是当前选中的，其余按列表原顺序），多出来的收在末尾的
@@ -163,9 +165,9 @@ scripts/gen-ios-icons.py         the app icon and the four alternates, from asse
   一把 key 之后，`NanoMuseVendorSheet` 显示 *用它来做什么*：这把 key 能做的每件事一个开关
   （图片和视频只在 DashScope 主机上出现，操作屏幕在 iPhone 上从不出现），默认全开；*就这样*
   把勾选的位置换成这个服务商的默认模型，*暂不* 什么都不改，保存本身不再自动切换任何东西。
-  自己的模型出错时，失败卡片（以及上游的纯文本错误）在已登录时多一个 *这次改用 nanoMuse
+  自己的对话模型出错时，失败卡片（以及上游的纯文本错误）在已登录时多一个 *这次改用 nanoMuse
   Cloud*：重试走中继的对话模型（`NanoMuseCloudOnce`，在 `resolveCurrentEntry()` 顶上读），
-  任何位置都不变。中继的菜单在登录时存在手机上，页面打开时刷新。*图像与视频模型* 作为
+  任何位置都不变。媒体失败时没有 Cloud 重试。中继的菜单在登录时存在手机上，页面打开时刷新。*图像与视频模型* 作为
   快捷入口保留，里面有自动生成动态的开关和短视频按钮。
 - **跨设备的连接（0.1.34）**（`NanoMuseConnectors.swift` 里的 `NanoMuseSharedConnectors`）：
   个人资料里的 `connectors` 列表记录哪台设备连了什么（id、标签、去掉查询字符串的地址、登录
@@ -183,7 +185,11 @@ scripts/gen-ios-icons.py         the app icon and the four alternates, from asse
   删除。**Reach**（`NanoMuseReach.swift`）：账号下每台设备一个面板（打开链接、发一条便条、
   跑一行 shell、截一张图），都通过 hub。
   **交给另一台设备的任务**（`NanoMuseDeviceMention.swift`、`NanoMuseRemoteApproval.swift`）：
-  以 `@〈设备〉` 开头的消息作为 hub 的 `task` 发给那台设备的 Muse；那边有一步需要点头时，
+  以 `@〈设备〉` 开头的消息作为 hub 的 `task` 发给那台设备的 Muse（消息开头打 `@` 时，菜单在文件
+  上方列出在线的设备）。运行期间回复就在聊天里画出来（`NanoMuseDeviceReply.swift`）：先是「〈设备〉正在处理…」，
+  每一步是一个胶囊，那边 Muse 说的话来一段显示一段，最后答案就在原处；这期间聊天处于忙碌状态，停止按钮
+  也会让那台设备停下，期间排队的消息在它结束后发出。超时或断网时，未完成的步骤显示失败；
+  停止时显示已取消。即使收到最终答案，也只有收到步骤结果才会显示成功。那边有一步需要点头时，
   `approval` 事件在这里、在输入任务的地方回答（[hub.md](hub.md)），卡片上是 Android 手机的
   四个答案：*允许一次*、*在这个聊天里允许*（为那个聊天记在内存里）、*在 〈设备〉 上始终允许
   这一步*（同一步在同一台设备上，按设备 id 存在这台手机上，智能体页面的*审批*里列出并可
@@ -269,7 +275,7 @@ scripts/gen-ios-icons.py         the app icon and the four alternates, from asse
 - **动作短视频（0.1.35）**（`NanoMuseVideoGen.swift`、`NanoMuseAvatarMotion.swift`、
   `NanoMuseMediaModels.swift`；对应 Android `avatar/VideoGen.kt`、`avatar/AvatarMotion.kt`）：
   画好的脸会得到四段 4 秒的短视频（待命、干活中、等你回复、搞定），来自 `wan2.2-i2v-flash`
-  （DashScope 的异步 API，走中继或你自己的百炼 key），提示词和手机版一字不差，按设备存在
+  （用你自己的百炼 key；或者使用运营者明确开启旧媒体代理的自建中继，项目托管 Cloud 不提供），提示词和手机版一字不差，按设备存在
   `avatar/motion/` 下；脸用 `AVQueuePlayer` 加 `AVPlayerLooper` 播放它们（后台时暂停），
   小龙的短视频来自 bundle。*图像与视频模型* 列出模型、*换形象后自动生成动态*（默认开）和
   *生成 / 重做短视频*；工作室的费用估算把短视频也算进去。
@@ -302,8 +308,9 @@ scripts/gen-ios-icons.py         the app icon and the four alternates, from asse
   **从 1.0.4 起这一列重新盖在列表的底边上**：`NanoMuseComposerHost` 是一个 `ZStack`，列表保持
   聊天的整个高度，拿到的底部 inset 是这一列量出的高度加底栏，于是消息从输入区和底栏下面滚过，
   静止时最后一条停在输入区上方；`/` 和 `@` 的弹出菜单和这一列同在一个 `VStack` 里，所以从布局上
-  就站在它的上边缘。这一列背后是 Android 的滚动渐隐（`nmBottomFade`）：列表一离开最新一条，
-  就出现一段 90 pt 的画布色渐变和这一列背后的实底，止于底栏上方，好让玻璃留住它后面的消息。
+  就站在它的上边缘。输入框胶囊背后是与 Android 对齐的圆角渐隐光晕（`NanoMuseComposerVignette`）：
+  列表一离开最新一条，就沿着输入框胶囊 26 pt 的圆角轮廓升起一段 90 pt 的画布色圆角渐变，并在底栏
+  上方的间隙淡出为透明，不留整宽的不透明白色长方形条，好让底栏玻璃留住它后面的消息。
   没有第二个宿主可切换。看门狗作为最后一道网留着（聊天在屏幕上时，这一列脱离或者量出 0，就通过
   `.id(rebuildTick)` 重建，每次出现最多两次，这样一个量错了的健康输入区不会反复把键盘收走），
   并且把看到的都记下来：**设置 → 外观 → 输入框检查** 在这一列四周画一个红框（探针视图在
@@ -463,7 +470,8 @@ scripts/gen-ios-icons.py         the app icon and the four alternates, from asse
   @Ichiro786 的 #329）：五个标签放在一个 `Capsule` 里，离底部安全区 12 pt，和上方的输入框
   一样宽（同样的 16 pt 边距；compact 宽度下最宽 420 pt，没有哪部手机碰得到；regular 宽度，也就是
   iPad 上，它和输入框一样是聊天列减去边距的 728 pt，见下面关于列的那条），只有图标，
-  SF 符号、无障碍标签和选中特征都和以前一样。胶囊是 `.ultraThinMaterial`，上面盖一层 55%
+  五个标签图形与 Android 的 `MuseBottomBar` 对齐（`bubble.left`、`doc.text`、`lightbulb`、
+  `checkmark.square`，以及资料库的三几何图形 `Category`），无障碍标签和选中特征都和以前一样。胶囊是 `.ultraThinMaterial`，上面盖一层 55%
   不透明度的外壳 surface 色（对比度靠这层色，模糊靠材质，和 Android 在背景模糊上盖 55% surface
   一样），边上一道 1 pt 的 `NanoMuseTones.hairline`；原来那条通栏的条和它顶上的细线没有了。
   五个标签平分胶囊的宽度，每一格整格可点；当前这个用 `tabIndicatorGlyph` 色显示实心符号，底下一个
@@ -726,7 +734,7 @@ nanoMuse 的样子长在 Android App 里；从 0.1.34 起，iPhone 在 OpenMinis
 | `community.StarPrompt`、`community.Nudges`：按中继策略的 star 提示 | 已完成（0.1.35）：`NanoMuseNudges.swift`、`NanoMuseStar`（时机、冷却和上限来自 `/v1/nudges`） |
 | `community.UpdateCheck`、版本行 | 已完成（0.1.35）：`NanoMuseUpdateCheck.swift`（已安装和最新，先 `nanomuse.cn/dl/index.json` 再 GitHub） |
 | `avatar.VideoGen`、`avatar.AvatarMotion`：动作短视频 | 已完成（0.1.35）：`NanoMuseVideoGen.swift`、`NanoMuseAvatarMotion.swift`、`NanoMuseMediaModels.swift` |
-| `nm.show_steps`：智能体的步骤，从 0.1.37 起默认显示 | 0.1.32：`NanoMuseSteps.swift`；已完成的消息只留对话本身，正在进行的那条显示它的步骤 |
+| `nm.show_steps`：智能体的步骤，从 0.1.37 起默认显示 | 0.1.32：`NanoMuseSteps.swift`；已完成的消息只留对话本身，重置主对话或启动时恢复后也一样；正在进行的那条显示它的步骤 |
 | `connectors`：目录、`SharedConnectors` | 已完成：`NanoMuseConnectors.swift`（0.1.33 目录，0.1.34 其他设备的条目） |
 | `ui.home`、`ui.chat`、`ui.settings`、`ui.profile`：外壳、标题栏、智能体页面 | 已完成：`NanoMuseShell.swift`、`NanoMuseHeader.swift`、`NanoMuseAgentPage.swift`、`NanoMuseSettings.swift`；0.1.35 每个房间都有 Muse 标题栏，设置做成 Muse 卡片（`NanoMuseChrome.swift`、`NanoMuseAppearance.swift`） |
 | `avatar`：画出来的脸、从聊天里换、工作室 | 已完成（0.1.34）：`NanoMuseAvatarFlow.swift`、`NanoMuseAvatarStudio.swift`、`NanoMuseImageGen.swift` |
@@ -736,8 +744,8 @@ nanoMuse 的样子长在 Android App 里；从 0.1.34 起，iPhone 在 OpenMinis
 | `hands`：手机自己的屏幕 | 没有对应物：iOS 不允许一个 App 操控另一个。App Intents / 快捷指令是那里的门 |
 | 小组件 | 上游的 `AgentWidget` 原样 |
 
-还要在真机上验证的，按顺序：用新账号从头到尾走一遍第一次打开；通过中继和通过百炼 key
-各做一次从聊天里换形象，以及随后画出的四段短视频；App 在后台时一条例程到期（测试员的
+还要在真机上验证的，按顺序：用新账号从头到尾走一遍第一次打开；确认托管账号的媒体入口会
+引导配置自己的服务商，再通过百炼 key 做一次从聊天里换形象，以及随后画出的四段短视频；App 在后台时一条例程到期（测试员的
 手机上 iOS 批不批刷新，多久批一次）；对账号下一台电脑的编程会话；第二台设备登录后的
 连接器列表。
 

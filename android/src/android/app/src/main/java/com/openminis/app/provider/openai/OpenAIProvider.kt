@@ -173,12 +173,12 @@ class OpenAIProvider private constructor(
 
     companion object {
         /**
-         * [T-android-thinking-level-arch] Codex OAuth client version advertised
-         * in the Version / User-Agent headers. Bumped 0.142.3 → 0.144.1 to
-         * match the CLIProxyAPI/sub2api upstream (fixes a gpt-5.6-luna 404 seen
-         * on the older client). Shared constant so future bumps touch one place.
+         * nanoMuse: Keep Codex OAuth response requests and model discovery on
+         * the same compatibility version. A stale 0.144.1 response-client
+         * identifier could be rejected even when a newer model catalogue
+         * advertised the model as available.
          */
-        private const val CODEX_CLIENT_VERSION = "0.144.1"
+        internal const val CODEX_CLIENT_VERSION = "0.162.1"
 
         /**
          * [T-android-stale-conn-retry-hang] Streaming time-to-first-byte
@@ -3287,6 +3287,41 @@ class OpenAIProvider private constructor(
                     put("role", msg.role.value)
                     put("content", msg.content)
                 })
+            }
+        }
+        // nanoMuse: Responses rejects duplicate function_call call_id values across the
+        // whole input. Rename later calls deterministically and queue each rewritten id so
+        // parallel/repeated function_call_output items keep the same pairing. Deliberately
+        // inspect call_id only: reasoning item ids and function_call item ids are untouched.
+        val responseCallIdCounts = HashMap<String, Int>()
+        val usedResponseCallIds = HashSet<String>()
+        val pendingResponseOutputs = HashMap<String, java.util.ArrayDeque<String>>()
+        for (i in 0 until input.length()) {
+            val item = input.optJSONObject(i) ?: continue
+            val rawId = item.optString("call_id", "")
+            if (rawId.isEmpty()) continue
+            when (item.optString("type")) {
+                "function_call" -> {
+                    var occurrence = (responseCallIdCounts[rawId] ?: 0) + 1
+                    var rewritten: String
+                    while (true) {
+                        val suffix = if (occurrence == 1) "" else "-$occurrence"
+                        rewritten = rawId.take(64 - suffix.length) + suffix
+                        if (rewritten !in usedResponseCallIds) break
+                        occurrence += 1
+                    }
+                    responseCallIdCounts[rawId] = occurrence
+                    usedResponseCallIds.add(rewritten)
+                    pendingResponseOutputs
+                        .getOrPut(rawId) { java.util.ArrayDeque() }
+                        .addLast(rewritten)
+                    item.put("call_id", rewritten)
+                }
+                "function_call_output" -> {
+                    pendingResponseOutputs[rawId]?.pollFirst()?.let {
+                        item.put("call_id", it)
+                    }
+                }
             }
         }
         body.put("input", input)

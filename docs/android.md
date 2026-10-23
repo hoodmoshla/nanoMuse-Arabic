@@ -43,12 +43,12 @@ update*) and offers the download.
    own, or a key of your own (any OpenAI-compatible endpoint, or the OAuth sign-ins the
    app ships with). Four models are set, not one, and they live on one page, **Settings →
    Models** (the card at the top of Settings opens it): **Chat**, the model that talks with
-   you (the account's menu opens on `deepseek-v4.1-flash`); **Operating the screen**, the one
-   that looks at the screen (`qwen3.8-27b`, the account's or the same model under your own
-   key); **Making pictures** and **Making clips**. Each row shows `<provider> · <model>` and
-   opens a picker: the *nanoMuse Cloud* group first when signed in, the recommended model
-   first and marked, then one group per provider of your own with only the models that fit
-   the row. A group shows eight models until you tap *Show N more* (the catalogue's default
+   you; **Operating the screen**, the one that looks at the screen; **Making pictures** and
+   **Making clips**. The hosted account recommends the same multimodal
+   `Qwen/Qwen3.6-27B-FP8` for the first two jobs and does not generate pictures or clips.
+   Each row shows `<provider> · <model>` and opens a picker: the *nanoMuse Cloud* group first
+   when signed in only on rows its live menu covers, then one group per provider of your own
+   with only the models that fit the row. A group shows eight models until you tap *Show N more* (the catalogue's default
    for the row first, then the one in use, then the rest as the provider lists them); past
    eight models in all, a *Search models* field above the groups filters every group live by
    id or name, and *No model matches* says when nothing does; the search and the opened
@@ -56,10 +56,11 @@ update*) and offers the download.
    chat's own `•••` menu, is the default for new chats and moves the main chat
    (*Applies to the main chat and to new chats; a side chat keeps its model.*); a side
    chat already open keeps its model. The other three pickers
-   open with *Automatic* (*Currently nanoMuse Cloud · qwen3.8-27b*), which forgets a choice
+   open with *Automatic* (*Currently nanoMuse Cloud · Qwen/Qwen3.6-27B-FP8* for screen
+   operation, for example), which forgets a choice
    made there and lets the row follow the order below again. Signed in, the page opens with
    one switch, *Use nanoMuse Cloud models*: off, the account leaves every picker and the
-   automatic order, no side call (titles, memory, pictures, clips) runs on it, and only the
+   automatic order, no side call (titles, memory or screen operation) runs on it, and only the
    *Use nanoMuse Cloud this time* button on a refused turn does; the sign-in stays for sync and
    your devices. If the chat model is still the account's at that moment, the Chat row moves
    to your first own chat model (the catalogue's default for that provider), as every client
@@ -85,15 +86,17 @@ gives the vendor (chat, operating the screen, making pictures, making clips), al
 it* switches the ticked rows to this provider, each on the catalogue's default for that job
 (`defaults.chat` and friends in `providers.json`), or on the first model of its list that
 fits when the default is not there; *Not now* changes nothing, and so does an unticked switch.
-Signed in, the body says nanoMuse Cloud keeps the rest. The page is the place to change it later.
+The other model choices stay as they are. The page is the place to change it later.
 
 **When you have not chosen.** Chat is the relay's recommended model when signed in, else the
 first provider of your own. The screen, pictures and clips follow the chat provider when it is
 a provider of your own with that capability (its catalogue default); else the relay's model
-when signed in; else the first provider of your own that can. A choice always wins, and
-nanoMuse Cloud never steps in front of a provider you chose. When a model of your own fails,
+when signed in and its live menu offers that job; else the first provider of your own that
+can. The hosted Cloud menu offers chat and screen operation, not media generation. A choice
+always wins, and nanoMuse Cloud never steps in front of a provider you chose. When a model of your own fails,
 nothing falls back on its own: the error card gets *Use nanoMuse Cloud this time* (signed in
-only), which runs that one turn on the relay's chat model and changes no row.
+only) for a chat or screen turn, which runs that one turn on the relay's chat model and
+changes no row. Failed media has no Cloud retry; choose or fix a provider of your own.
 
 **Your own relay.** The sign-in screen talks to nanoMuse Cloud unless you tell it
 otherwise: *Use a different server* under the sign-in form takes the address of a relay
@@ -109,6 +112,13 @@ usage, the model menu) goes to that address.
 ## What the phone does
 
 Shell progress updates preserve text beyond a shorter rewrite. Terminal color and title codes are removed before those updates, so they cannot leave escape fragments in the output.
+
+The agent's system prompt keeps its safety, tool and phone-operation instructions in a stable
+prefix. Session-dependent material—skills and MCP metadata, model/device state,
+conversation-specific steering, memory and `USER.md`—is appended in a deterministic suffix, with
+the date, language and available-model count in its final runtime-context section. Updating memory
+or crossing into a new day therefore leaves the static prefix available to providers that support
+prefix caching.
 
 | | |
 | --- | --- |
@@ -204,6 +214,10 @@ models' word, as before. When no configured provider has a capability, the page 
 sentence (*Pictures need a provider with image models: Bailian, OpenAI, Gemini or
 OpenRouter.*) instead of failing.
 
+In the avatar studio, asking for a new set of candidates replaces the previous set. A picture
+or failure that finishes from the previous request cannot change the new set's tiles or files.
+Again starts the new request without waiting for the old picture to finish saving.
+
 **When the provider cannot be reached** (`net/ProviderReach.kt`, `ui/chat/ProviderReachCard.kt`).
 A failed turn whose error is the transport's (OkHttp's *failed to connect to chatgpt.com/… (port
 443)*, *Unable to resolve host*, a TLS or timeout line) or OpenAI's *region not supported* is
@@ -256,12 +270,26 @@ Provider clients carry `OwnProviderProxy.authenticator` for a proxy that asks fo
 *Test* fetches `https://chatgpt.com/` through the proxy as entered and reports the status and the
 milliseconds. Unit tests: `ProviderReachTest`, `OwnProviderProxyTest`.
 
+Leaving sign-in or the Network page ends its pending request, even if the server has
+started to answer but has not finished sending the response.
+
 ## Voice input
+
+On Android 13 and later, continuous system dictation keeps feeding audio when the recognizer
+starts its next segment. A write that fails on the previous segment's closed pipe cannot
+disable the new segment's audio stream.
+
+Provider voice input returns to idle when a silent session reaches its limit or a very short
+utterance expires without enough speech to transcribe. A transcription already in progress
+still delivers its result before the session finishes.
 
 System voice input can prefer on-device recognition. If the phone has no usable on-device
 service, it falls back to the default recognition service. A language error from that
 default service is shown in the voice panel. A running on-device recognizer whose language
 pack is unavailable still falls back once to the default service.
+
+The voice detector releases its allocated recorder if recording cannot start or is cancelled
+before capture begins. You can retry voice input without leaving that recorder allocated.
 
 ## Privacy and permissions
 
@@ -332,6 +360,8 @@ keytool -genkeypair -keystore ~/.nanomuse-release/nanomuse.jks -alias nanomuse \
 and put its four values in `android/keystore.properties` (git-ignored: `storeFile`,
 `storePassword`, `keyAlias`, `keyPassword`).
 
+The chat-only emulator build (`-Pnm.abi=x86_64`) excludes cached arm64 proot and Alpine root filesystem assets. Switching back to the default arm64 build includes those assets again; no cache deletion is needed.
+
 ## Releases
 
 `.github/workflows/android.yml` builds the debug APK on every change under `android/`
@@ -359,8 +389,8 @@ like the Python package's version does.
 | `ui/models/` | The Models page, the picker behind each row, the *Use it for* card (`minis://settings/models`) |
 | `chat/CloudRetry.kt` | *Use nanoMuse Cloud this time*: whether the card offers it and the one-turn provider `ChatViewModel.retryLast` uses |
 | `chat/RoutineWakes.kt`, `ui/chat/NmRoutineWakeRow.kt` | A scheduled task's turn is the routine's, not the person's: `ScheduledAgentRunner` arms a wake before the prompt goes out, `ChatViewModel` binds it to the persisted row, and the chat draws that row as one quiet line, *Routine · 〈label〉 · 08:00*, instead of a bubble in the person's voice; the model gets a one-turn `SessionAddenda` saying so, so it opens with the result rather than thanking anyone for asking. Up to 1.0.4 the prompt stood in the chat as if the person had typed it |
-| `feed/` | The Feed: `FeedFlow` keeps the daily scheduled task and the conversation it writes in, which is the agent's working room and stays out of the drawer, the chat list and the main-chat fallback (`FeedFlow.hidden`, read by `ChatRepository.observeSessions()`, `MainChat` and the move-to sheet); `FeedStore` holds the posts. When the task has written posts while the app is in the background, one notification names them and opens the Feed tab (`minis://feed`), in place of the generic "task done" notice with the model's text that up to 1.0.4 opened the conversation |
-| `hands/` | The accessibility service as the hand, the stage and the capsule, the screen reader; `Hands.screenModel` picks the screen's model (chosen → the chat provider's own default when it sees → the Cloud's `qwen3.8-27b` → the same under your own key → a chat model that sees → the Vision Group) |
+| `feed/` | The Feed: `FeedFlow` keeps the daily scheduled task and the conversation it writes in, which is the agent's working room and stays out of the drawer, the chat list and the main-chat fallback (`FeedFlow.hidden`, read by `ChatRepository.observeSessions()`, `MainChat` and the move-to sheet); `FeedStore` holds the posts. The agent reads the posts, with `liked: true` on the ones you tapped, at `/var/minis/feed/YYYY-MM-DD/NN.md`: a read-only copy (`FeedSandboxScope`, refreshed before each shell command and on every like) rather than the app's own directory, since PRoot cannot bind a folder read-only and a like is the person's, not the agent's to change; a post without `liked` is one not reacted to, which the prompt says is not a dislike. When the task has written posts while the app is in the background, one notification names them and opens the Feed tab (`minis://feed`), in place of the generic "task done" notice with the model's text that up to 1.0.4 opened the conversation |
+| `hands/` | The accessibility service as the hand, the stage and the capsule, the screen reader; `Hands.screenModel` picks the screen's model (chosen → the chat provider's own default when it sees → the model Cloud recommends for `gui` → the own-key fallback → a chat model that sees → the Vision Group) |
 | `ui/coding/` | The coding agents of your computers |
 | `connectors/`, `ui/connectors/` | The connectors catalogue (`ConnectorsCatalogue` reads the asset), MCP authorization discovery + registration (`McpAuthDiscovery`), connecting and token refresh (`Connectors`), what this phone connected as published to the profile and what the other devices did (`SharedConnectors`), the Settings → Connectors page |
 | `ui/cloud/` | Sign-in, the Account screen, the Devices section |

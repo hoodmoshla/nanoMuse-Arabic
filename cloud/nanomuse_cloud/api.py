@@ -3,8 +3,8 @@
     GET  /healthz                                               → {ok, version, models, paused}
     GET  /v1/config                                             → the public figures the apps print (allowance, bonus, links, code_ttl_s, password_min_len); a minute's cache
     POST /v1/auth/code        {identifier}                      → 204 (400 phone_region: a number the SMS sender cannot reach; a disabled account gets the same 204 and no code is sent; 429 domain_limited: a new address of a domain at its day's sign-up limit)
-    POST /v1/auth/verify      {identifier, code, device, invite?} → {api_key, base_url, account, tokens, models}
-    POST /v1/auth/login       {identifier, password, device}    → the same, for accounts that set a password
+    POST /v1/auth/verify      {identifier, code, device, invite?, device_id?, device_kind?} → {api_key, base_url, account, tokens, models}
+    POST /v1/auth/login       {identifier, password, device, device_id?, device_kind?} → the same, for accounts that set a password
     POST /v1/auth/password    {password, current?}              → 204 (set / change; "" + current removes)
     GET  /v1/me                                                 → account, tokens, spend (¥ spent / pool / left), invite, contribute, usage by kind, models, recent, nudges
     GET  /v1/nudges                                             → when the apps may ask for a star (0.18; public, cached an hour; the operator's policy over the defaults)
@@ -32,9 +32,9 @@
     GET  /v1/models                                             → OpenAI list, with modalities; for a member, the usable models under the operator's key after the menu (catalog: true)
     GET  /v1/models/{id}      ?kind=chat                        → one model, or a member's typed id checked (listed, priced_as)
     POST /v1/chat/completions                                   → forwarded; stream or not
-    POST /v1/images/generations                                 → DashScope native, returned as b64_json
-    POST /v1/images/edits     multipart                         → same, with the picture
-    POST /api/v1/services/aigc/video-generation/video-synthesis → DashScope's async video API, relayed
+    POST /v1/images/generations                                 → 410 unless self-host media is enabled
+    POST /v1/images/edits     multipart                         → 410 unless self-host media is enabled
+    POST /api/v1/services/aigc/video-generation/video-synthesis → 410 unless self-host media is enabled
     GET  /api/v1/tasks/{id}                                     → its task poll (own tasks only)
     GET  /api/v1/uploads?action=getPolicy&model=…               → its temporary-storage policy
     WS   /v1/hub                                                → the devices of one account meet (hub.py)
@@ -128,6 +128,35 @@ from .sync import DEFAULT_PAGE, SyncStore
 log = logging.getLogger("nanomuse_cloud.api")
 
 
+class UpstreamGate:
+    """A process-wide provider slot limit with aggregate-only health figures."""
+
+    def __init__(self, limit: int):
+        self.limit = max(0, limit)
+        self._semaphore = asyncio.Semaphore(self.limit) if self.limit else None
+        self.active = 0
+        self.waiting = 0
+
+    @asynccontextmanager
+    async def slot(self) -> AsyncIterator[None]:
+        if self._semaphore is not None:
+            self.waiting += 1
+            try:
+                await self._semaphore.acquire()
+            finally:
+                self.waiting -= 1
+        self.active += 1
+        try:
+            yield
+        finally:
+            self.active -= 1
+            if self._semaphore is not None:
+                self._semaphore.release()
+
+    def snapshot(self) -> dict[str, int]:
+        return {"active": self.active, "waiting": self.waiting, "limit": self.limit}
+
+
 def error_response(status: int, code: str, message: str, extra: dict | None = None) -> JSONResponse:
     """OpenAI's error shape, so the apps' clients parse it, plus whatever fields the app can
     act on (`allowance_exhausted` says what is left and where the three ways on lead)."""
@@ -138,11 +167,15 @@ def error_response(status: int, code: str, message: str, extra: dict | None = No
 
 def thinking_requested(body: dict) -> bool | None:
     """What a chat request says about reasoning, in any of the dialects the apps speak:
-    True when it asks for it (`enable_thinking: true`, `thinking: {"type": "enabled"}`, a
-    `reasoning_effort` other than `none`, a `thinking_budget`), False when it declines, None
-    when it says nothing."""
+    True when it asks for it (`enable_thinking: true`,
+    `chat_template_kwargs.enable_thinking: true`, `thinking: {"type": "enabled"}`, a
+    `reasoning_effort` other than `none`, a `thinking_budget`), False when it declines,
+    None when it says nothing."""
     if "enable_thinking" in body:
         return bool(body["enable_thinking"])
+    template = body.get("chat_template_kwargs")
+    if isinstance(template, dict) and "enable_thinking" in template:
+        return bool(template["enable_thinking"])
     thinking = body.get("thinking")
     if isinstance(thinking, bool):
         return thinking
@@ -157,20 +190,30 @@ def thinking_requested(body: dict) -> bool | None:
 
 
 def apply_chat_defaults(body: dict, defaults: dict) -> None:
-    """The operator's defaults (CHAT_DEFAULTS, `{"enable_thinking": false}` as shipped) go
-    in where the request is silent. Reasoning is one thing said in several ways, so the
-    `enable_thinking` default follows what the request already said with `reasoning_effort`
-    or `thinking` — Model Studio refuses `reasoning_effort: low` next to `enable_thinking:
-    false` ("'reasoning_effort' must be 'none' when 'enable_thinking' is false"), which is
-    exactly what an app's thinking-level badge plus the shipped default used to produce."""
+    """Merge operator defaults without contradicting the request's reasoning choice.
+
+    Model Studio reads top-level ``enable_thinking``; vLLM's Qwen chat template reads
+    ``chat_template_kwargs.enable_thinking``. Either default follows an explicit
+    ``reasoning_effort`` or ``thinking`` choice from the app.
+    """
     wants = thinking_requested(body)
     for k, v in defaults.items():
         if k == "enable_thinking" and wants is not None:
             body.setdefault("enable_thinking", wants)
             continue
+        if k == "chat_template_kwargs" and isinstance(v, dict):
+            default_template = dict(v)
+            if "enable_thinking" in default_template and wants is not None:
+                default_template["enable_thinking"] = wants
+            current = body.get(k)
+            if isinstance(current, dict):
+                body[k] = {**default_template, **current}
+            else:
+                body.setdefault(k, default_template)
+            continue
         body.setdefault(k, v)
     effort = body.get("reasoning_effort")
-    if body.get("enable_thinking") is False and isinstance(effort, str) and effort.strip().lower() != "none":
+    if thinking_requested(body) is False and isinstance(effort, str) and effort.strip().lower() != "none":
         body["reasoning_effort"] = "none"
 
 
@@ -412,6 +455,12 @@ def create_app(
             raise CloudError(503, "upstream_unconfigured", "nanoMuse Cloud has no model key configured")
         return {"Authorization": f"Bearer {settings.upstream_key}", "Content-Type": "application/json"}
 
+    def dashscope_headers() -> dict[str, str]:
+        key = settings.dashscope_key or settings.upstream_key
+        if not key:
+            raise CloudError(503, "upstream_unconfigured", "nanoMuse Cloud has no media model key configured")
+        return {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+
     # -- health ----------------------------------------------------------------
 
     @app.get("/healthz")
@@ -420,7 +469,7 @@ def create_app(
         return {
             "ok": True,
             "version": __version__,
-            "models": [m.id for m in settings.models],
+            "models": [m.id for m in cloud.offered_models()],
             "paused": [k for k, v in cloud.controls.paused().items() if v],
         }
 
@@ -455,7 +504,15 @@ def create_app(
             raise CloudError(400, "code_wrong", "The code is six digits")
         device = str(body.get("device", ""))[:80]
         invite = str(body.get("invite", ""))[:32]
-        key, caller, created = await asyncio.to_thread(cloud.verify_code, ident, code, device, invite)
+        key, caller, created = await asyncio.to_thread(
+            cloud.verify_code,
+            ident,
+            code,
+            device,
+            invite,
+            str(body.get("device_id") or ""),
+            str(body.get("device_kind") or ""),
+        )
         me = cloud.me(caller, client_place(request))
         return {"api_key": key, "created": created, **me}
 
@@ -471,7 +528,15 @@ def create_app(
         if not password:
             raise CloudError(400, "password_required", "Enter the password")
         device = str(body.get("device", ""))[:80]
-        key, caller = await asyncio.to_thread(cloud.login_password, ident, password, device, client_ip(request))
+        key, caller = await asyncio.to_thread(
+            cloud.login_password,
+            ident,
+            password,
+            device,
+            client_ip(request),
+            str(body.get("device_id") or ""),
+            str(body.get("device_kind") or ""),
+        )
         me = cloud.me(caller, client_place(request))
         return {"api_key": key, "created": False, **me}
 
@@ -736,7 +801,9 @@ def create_app(
         menu = {m["id"] for m in out["data"]}
         added = 0
         for e in entries:
-            if e.id in menu:
+            # Hosted media is retired even for members: the provider catalogue may still
+            # contain image models, but exposing one here would restore a billing bypass.
+            if e.id in menu or (e.kind != "chat" and not settings.media_enabled):
                 continue
             spec = settings.unlisted_model(e.id, e.kind)
             if spec is None:
@@ -758,6 +825,8 @@ def create_app(
         """One model: the menu's by id; for a member, also one the menu does not carry,
         given the `kind` it is for (`?kind=chat`) — how an app checks a typed id."""
         m = settings.model(model_id)
+        if m is not None and m.kind != "chat" and not settings.media_enabled:
+            cloud.model_for(model_id, m.kind, caller)
         if m is None and kind:
             m = cloud.model_for(model_id, kind, caller)
         if m is None:
@@ -766,6 +835,27 @@ def create_app(
         return m.to_public()
 
     # -- chat -----------------------------------------------------------------------------
+
+    chat_gate = UpstreamGate(settings.chat_concurrency)
+    chat_retry_limit = max(0, min(settings.chat_retries, 5))
+
+    def chat_retryable(status: int) -> bool:
+        return status == 429 or status >= 500
+
+    async def chat_retry_pause(attempt: int, status: int) -> None:
+        log.warning("chat upstream HTTP %s; retry %s/%s", status, attempt + 1, chat_retry_limit)
+        await asyncio.sleep(max(0.0, settings.chat_retry_base_s) * (2**attempt))
+
+    async def chat_post(url: str, headers: dict[str, str], payload: bytes) -> httpx.Response:
+        """One non-streaming turn, queued globally and retried before an answer exists."""
+        async with chat_gate.slot():
+            attempt = 0
+            while True:
+                r = await http.post(url, headers=headers, content=payload)
+                if not chat_retryable(r.status_code) or attempt >= chat_retry_limit:
+                    return r
+                await chat_retry_pause(attempt, r.status_code)
+                attempt += 1
 
     @app.post("/v1/chat/completions")
     async def chat(request: Request, caller: Caller = Depends(caller_dep)) -> Response:
@@ -789,6 +879,7 @@ def create_app(
         # provider's abuse tooling can tell accounts apart without knowing them.
         body["user"] = caller.account_id[:32]
         url = settings.upstream_base.rstrip("/") + "/chat/completions"
+        request_body = dumps(body).encode()
         fallback_prompt_tokens = math.ceil(prompt_chars(body.get("messages") or []) / 3)
         # For an account that opted in, the turn is kept once it is answered (service.keep_sample)
         # with the platform and language hints from the headers and, since 0.10, the address
@@ -807,7 +898,7 @@ def create_app(
         if not stream:
             try:
                 try:
-                    r = await http.post(url, headers=headers, content=dumps(body).encode())
+                    r = await chat_post(url, headers, request_body)
                 except httpx.HTTPError as e:
                     log.warning("upstream error: %s", e)
                     raise CloudError(502, "upstream", "The model provider did not answer") from e
@@ -845,45 +936,59 @@ def create_app(
             # A request the provider refused, or dropped before a single token, costs the
             # account nothing; a stream that broke off midway is charged for what arrived.
             failed = False
+            accepted = False
             try:
-                async with http.stream("POST", url, headers=headers, content=dumps(body).encode()) as r:
-                    if r.status_code >= 400:
-                        raw = await r.aread()
-                        cloud.note(
-                            caller.account_id,
-                            upstream_event_kind(r.status_code, raw),
-                            upstream_detail("chat", r.status_code, spec.id, raw),
-                        )
-                        failed = True
-                        err = relay_error_body(r.status_code, raw)
-                        cloud.db.daily_add("error", str(err["error"]["code"]))  # the 200 has left; count it here
-                        yield f"data: {dumps(err)}\n\n".encode()
-                        yield b"data: [DONE]\n\n"
-                        return
-                    async for line in r.aiter_lines():
-                        if line.startswith("data:"):
-                            payload = line[5:].strip()
-                            if payload and payload != "[DONE]":
-                                try:
-                                    obj = json.loads(payload)
-                                except ValueError:
-                                    obj = None
-                                if isinstance(obj, dict):
-                                    u = usage_from_json(obj)
-                                    if u is not None:
-                                        usage = u
-                                    for ch in obj.get("choices") or []:
-                                        d = ch.get("delta") if isinstance(ch, dict) else None
-                                        if isinstance(d, dict) and isinstance(d.get("content"), str):
-                                            text_len += len(d["content"])
-                                            reply.append(d["content"])
-                                    obj["model"] = spec.id
-                                    payload = dumps(obj)
-                            yield f"data: {payload}\n\n".encode()
-                        elif line == "":
-                            continue
-                        else:
-                            yield (line + "\n").encode()
+                async with chat_gate.slot():
+                    attempt = 0
+                    while True:
+                        retry_status = 0
+                        async with http.stream("POST", url, headers=headers, content=request_body) as r:
+                            if r.status_code >= 400:
+                                raw = await r.aread()
+                                if chat_retryable(r.status_code) and attempt < chat_retry_limit:
+                                    retry_status = r.status_code
+                                else:
+                                    cloud.note(
+                                        caller.account_id,
+                                        upstream_event_kind(r.status_code, raw),
+                                        upstream_detail("chat", r.status_code, spec.id, raw),
+                                    )
+                                    failed = True
+                                    err = relay_error_body(r.status_code, raw)
+                                    # The 200 has left; count the embedded stream error here.
+                                    cloud.db.daily_add("error", str(err["error"]["code"]))
+                                    yield f"data: {dumps(err)}\n\n".encode()
+                                    yield b"data: [DONE]\n\n"
+                                    return
+                            else:
+                                accepted = True
+                                async for line in r.aiter_lines():
+                                    if line.startswith("data:"):
+                                        payload = line[5:].strip()
+                                        if payload and payload != "[DONE]":
+                                            try:
+                                                obj = json.loads(payload)
+                                            except ValueError:
+                                                obj = None
+                                            if isinstance(obj, dict):
+                                                u = usage_from_json(obj)
+                                                if u is not None:
+                                                    usage = u
+                                                for ch in obj.get("choices") or []:
+                                                    d = ch.get("delta") if isinstance(ch, dict) else None
+                                                    if isinstance(d, dict) and isinstance(d.get("content"), str):
+                                                        text_len += len(d["content"])
+                                                        reply.append(d["content"])
+                                                obj["model"] = spec.id
+                                                payload = dumps(obj)
+                                        yield f"data: {payload}\n\n".encode()
+                                    elif line == "":
+                                        continue
+                                    else:
+                                        yield (line + "\n").encode()
+                                return
+                        await chat_retry_pause(attempt, retry_status)
+                        attempt += 1
             except httpx.HTTPError as e:
                 log.warning("upstream stream error: %s %s", type(e).__name__, e)
                 cloud.note(caller.account_id, "upstream.error", f"chat stream broke {spec.id}: {type(e).__name__}")
@@ -892,7 +997,7 @@ def create_app(
                 yield f"data: {dumps(err)}\n\n".encode()
                 yield b"data: [DONE]\n\n"
             finally:
-                if not failed:
+                if accepted and not failed:
                     if usage is None:
                         usage = Usage(fallback_prompt_tokens, estimate_tokens("".join(reply)))
                     cloud.charge_chat(caller, spec, usage.prompt, usage.completion, request_id, cached_tokens=usage.cached)
@@ -919,7 +1024,7 @@ def create_app(
             attempt = 0
             while True:
                 try:
-                    r = await http.post(url, headers=upstream_headers(), content=payload)
+                    r = await http.post(url, headers=dashscope_headers(), content=payload)
                 except httpx.HTTPError as e:
                     raise CloudError(502, "upstream", "The image provider did not answer") from e
                 if r.status_code != 429 and r.status_code < 500:
@@ -1103,7 +1208,7 @@ def create_app(
         clip_cost = 0 if probe else spec.video_cost_uy(_clip_seconds(body, spec), _clip_resolution(body))
         # reserved while the submission runs; once accepted, the task row holds the clip's
         # price against the allowance (db.pending_video_cost) until the clip is charged
-        headers = upstream_headers()  # before the hold, as for chat: no key, nothing held
+        headers = dashscope_headers()  # before the hold, as for chat: no key, nothing held
         request_id = uuid.uuid4().hex[:16]
         cloud.check_budget(caller, minimum=spec.per_clip, cost_uy=clip_cost, request_id=request_id, place=client_place(request))
         body["model"] = spec.upstream
@@ -1132,11 +1237,15 @@ def create_app(
 
     @app.get("/api/v1/tasks/{task_id}")
     async def video_task(task_id: str, caller: Caller = Depends(caller_dep)) -> Response:
+        # Polling is a media route too: after hosted media is retired it must not reach the
+        # provider or settle a pending charge left by an older client.
+        if not settings.media_enabled:
+            cloud.model_for("", "video", caller)
         task = cloud.db.video_task(task_id)
         if task is None or task["account_id"] != caller.account_id:
             raise CloudError(404, "no_task", "No such task")
         try:
-            r = await http.get(settings.dashscope_base.rstrip("/") + f"/tasks/{task_id}", headers=upstream_headers())
+            r = await http.get(settings.dashscope_base.rstrip("/") + f"/tasks/{task_id}", headers=dashscope_headers())
         except httpx.HTTPError as e:
             raise CloudError(502, "upstream", "The video provider did not answer") from e
         if r.status_code < 400:
@@ -1158,13 +1267,13 @@ def create_app(
         the row is purged. A SUCCEEDED answer charges the clip exactly once (the same path
         as a poll); FAILED or CANCELED lets the hold go; a task the provider no longer knows
         is marked UNKNOWN. A handful per call. Returns how many tasks were asked about."""
-        if not settings.upstream_key:
+        if not settings.media_enabled or not (settings.dashscope_key or settings.upstream_key):
             return 0
         done = 0
         for task in cloud.db.video_tasks_to_settle(limit):
             task_id = str(task["task_id"])
             try:
-                r = await http.get(settings.dashscope_base.rstrip("/") + f"/tasks/{task_id}", headers=upstream_headers())
+                r = await http.get(settings.dashscope_base.rstrip("/") + f"/tasks/{task_id}", headers=dashscope_headers())
             except httpx.HTTPError as e:
                 log.warning("video task %s: the provider did not answer the relay's check: %s", task_id[:12], e)
                 continue  # not counted as a check: the next tick asks again
@@ -1196,7 +1305,7 @@ def create_app(
             r = await http.get(
                 settings.dashscope_base.rstrip("/") + "/uploads",
                 params={"action": "getPolicy", "model": spec.upstream},
-                headers=upstream_headers(),
+                headers=dashscope_headers(),
             )
         except httpx.HTTPError as e:
             raise CloudError(502, "upstream", "The video provider did not answer") from e
@@ -1299,6 +1408,7 @@ def create_app(
             "version": __version__,
             "time": t,
             "in_flight": {"requests": sum(in_flight.values()), "accounts": len(in_flight), "limit": cloud.in_flight.limit},
+            "chat_upstream": {**chat_gate.snapshot(), "retries": chat_retry_limit},
             "hub": hub.stats() if hub is not None else None,
             "last_hour": {
                 "requests": cloud.db.requests_since_all(t - 3600),

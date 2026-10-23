@@ -335,6 +335,16 @@
     <string name="nm_avatar_retry">Réessayer</string>
     <string name="nm_avatar_describe_title">Décrivez un nouveau visage</string>
     <string name="nm_avatar_describe_body">Une phrase suffit : ce que c’est, ce que ça porte, ce que ça dégage. Choisissez un style, et votre modèle d’image en dessine quatre au choix.</string>
+    <string name="nm_avatar_preset_moss_name">Messager mousse</string>
+    <string name="nm_avatar_preset_moss_description">un petit messager couvert de mousse, aux oreilles en feuilles et à la sacoche de toile sans marque</string>
+    <string name="nm_avatar_preset_tide_name">Bricoleur des marées</string>
+    <string name="nm_avatar_preset_tide_description">un axolotl bricoleur vert écume, aux branchies corail et à la pochette à outils unie</string>
+    <string name="nm_avatar_preset_dusk_name">Papillon du crépuscule</string>
+    <string name="nm_avatar_preset_dusk_description">un papillon indigo pensif, aux taches pêche sur les ailes, avec un col crème et des lunettes rondes</string>
+    <string name="nm_avatar_preset_copper_name">Gland de cuivre</string>
+    <string name="nm_avatar_preset_copper_description">un petit automate en cuivre en forme de gland, avec des panneaux vert sauge et une écharpe bleu sourd</string>
+    <string name="nm_avatar_preset_a11y">Option %1$d : %2$s, %3$s</string>
+    <string name="nm_avatar_preset_ai">Inspiration générée par IA</string>
     <string name="nm_avatar_default_description">Un bébé dragon joufflu jaune pâle, avec de minuscules cornes orange et de petites ailes repliées</string>
     <string name="nm_avatar_style_flat">Plat</string>
     <string name="nm_avatar_style_clay">Pâte à modeler 3D</string>
@@ -361,6 +371,8 @@
     <string name="nm_own_clip_choose">Choisir un clip</string>
     <string name="nm_own_clip_replace">Remplacer le clip</string>
     <string name="nm_own_clip_default">Visage par défaut</string>
+    <!-- The per-mood row of the own clip: takes that mood's clip away, the others stay -->
+    <string name="nm_own_clip_mood_remove">Retirer</string>
     <string name="nm_own_clip_menu">Votre propre clip…</string>
     <string name="nm_own_clip_preview_title">Aperçu</string>
     <string name="nm_own_clip_preview_body">Voici comment il joue comme visage : sans le son, en boucle, recadré dans le cercle.</string>
@@ -1116,7 +1128,6 @@
     <string name="nm_cloud_provider_no_delete">Ce fournisseur est votre compte nanoMuse Cloud. Désactivez-le ci-dessus pour ne plus utiliser ses modèles ; pour vous déconnecter, ouvrez Réglages › nanoMuse Cloud.</string>
     <string name="nm_welcome_own_key">Utiliser plutôt ma propre clé d’API</string>
     <string name="nm_useit_title">L’utiliser pour</string>
-    <string name="nm_useit_body">Choisissez ce que cette clé doit prendre en charge. nanoMuse Cloud garde le reste.</string>
     <string name="nm_useit_body_signed_out">Choisissez ce que cette clé doit prendre en charge.</string>
     <string name="nm_useit_use">L’utiliser</string>
     <string name="nm_useit_not_now">Pas maintenant</string>

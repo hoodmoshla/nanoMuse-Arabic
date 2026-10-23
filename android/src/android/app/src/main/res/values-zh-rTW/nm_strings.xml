@@ -319,6 +319,16 @@
     <string name="nm_avatar_retry">重試</string>
     <string name="nm_avatar_describe_title">描述一個新形象</string>
     <string name="nm_avatar_describe_body">一句話就夠：它是什麼、穿什麼、什麼氣質。選一種風格，你的圖像模型會畫四張讓你挑。</string>
+    <string name="nm_avatar_preset_moss_name">苔郵使</string>
+    <string name="nm_avatar_preset_moss_description">一隻覆著柔軟苔蘚、長著葉片耳朵、背著素面帆布包的小郵使</string>
+    <string name="nm_avatar_preset_tide_name">潮汐巧匠</string>
+    <string name="nm_avatar_preset_tide_description">一隻海沫綠色、長著珊瑚色外鰓、繫著素面工具袋的蠑螈巧匠</string>
+    <string name="nm_avatar_preset_dusk_name">暮光蛾</string>
+    <string name="nm_avatar_preset_dusk_description">一隻沉靜的靛藍色飛蛾，翅上有桃色斑點，戴米白圍領和圓眼鏡</string>
+    <string name="nm_avatar_preset_copper_name">銅果</string>
+    <string name="nm_avatar_preset_copper_description">一個橡果形的小銅製自動機，配鼠尾草綠面板和灰藍色圍巾</string>
+    <string name="nm_avatar_preset_a11y">選項 %1$d：%2$s，%3$s</string>
+    <string name="nm_avatar_preset_ai">AI 生成的靈感範例</string>
     <string name="nm_avatar_default_description">一隻圓滾滾的奶黃色小龍，橙色小角，摺著小翅膀</string>
     <string name="nm_avatar_style_flat">扁平插畫</string>
     <string name="nm_avatar_style_clay">3D 黏土</string>
@@ -345,6 +355,8 @@
     <string name="nm_own_clip_choose">選擇影片</string>
     <string name="nm_own_clip_replace">更換影片</string>
     <string name="nm_own_clip_default">預設形象</string>
+    <!-- The per-mood row of the own clip: takes that mood's clip away, the others stay -->
+    <string name="nm_own_clip_mood_remove">移除</string>
     <string name="nm_own_clip_menu">你自己的影片…</string>
     <string name="nm_own_clip_preview_title">預覽</string>
     <string name="nm_own_clip_preview_body">作為形象時就是這樣播放的：靜音、循環、裁成圓形。</string>
@@ -1081,7 +1093,6 @@
     <string name="nm_cloud_provider_no_delete">這個提供商就是你的 nanoMuse Cloud 帳號。要停用它的模型，請在上面關閉開關；要登出，請開啟「設定 › nanoMuse Cloud」。</string>
     <string name="nm_welcome_own_key">改用自己的 API key</string>
     <string name="nm_useit_title">用它來做什麼</string>
-    <string name="nm_useit_body">選這把 key 負責哪些事，其餘仍由 nanoMuse Cloud 負責。</string>
     <string name="nm_useit_body_signed_out">選這把 key 負責哪些事。</string>
     <string name="nm_useit_use">就這樣</string>
     <string name="nm_useit_not_now">暫不</string>

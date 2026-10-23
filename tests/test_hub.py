@@ -100,15 +100,12 @@ def test_cloud_urls() -> None:
     assert model_url("https://cloud.nanomuse.cn") == "https://cloud.nanomuse.cn/v1"
     # contract C4: the chat default when offered, else the first chat model; the hands
     # default is a separate pick (the relay's `for` field, else what the id says it sees)
-    assert (
-        CloudClient.recommended_model([{"id": "x"}, {"id": "deepseek-v4.1-flash"}])
-        == "deepseek-v4.1-flash"
-    )
+    assert CloudClient.recommended_model([{"id": "x"}, {"id": "deepseek-v4.1-flash"}]) == "x"
     assert CloudClient.recommended_model([{"id": "only"}]) == "only"
     assert (
         CloudClient.recommended_model([{"id": "x"}, {"id": "qwen3.8-27b"}], "gui") == "qwen3.8-27b"
     )
-    assert CloudClient.recommended_model([{"id": "x"}], "gui") == "qwen3.8-27b"
+    assert CloudClient.recommended_model([{"id": "x"}], "gui") == "Qwen/Qwen3.6-27B-FP8"
     labelled = [
         {"id": "deepseek-v4.1-flash", "for": ["chat"]},
         {"id": "qwen3.8-27b", "for": ["gui"]},
@@ -764,6 +761,25 @@ def test_task_from_a_device_runs_in_a_visible_side_chat(hub_server) -> None:
     relay.call_runtime("task", {"text": "again", "conversation": "conv-1"}, "t2")
     assert relay.next_frame("result")["body"]["text"] == "Again"
     assert len([t for t in client.get("/api/threads").json() if t["title"] == "From Pixel"]) == 1
+    # The conversation id is local to its sending device. Another device using the same
+    # value gets a separate history, approvals and result lane.
+    tablet = {**PHONE, "id": "tablet-1", "name": "Tablet"}
+    llm.script.append(LLMResponse(content="Tablet answer"))
+    relay.send(
+        {
+            "type": "call",
+            "id": "t3",
+            "from": tablet,
+            "action": "task",
+            "args": {"text": "tablet task", "conversation": "conv-1"},
+        }
+    )
+    assert relay.next_frame("result")["body"]["text"] == "Tablet answer"
+    remote = [t for t in client.get("/api/threads").json() if t.get("remote_from")]
+    assert {(t["remote_from"]["device"], t["remote_from"]["conversation"]) for t in remote} == {
+        (PHONE["id"], "conv-1"),
+        ("tablet-1", "conv-1"),
+    }
 
 
 def test_a_stopped_task_fails_with_cancelled_and_only_for_its_asker(hub_server) -> None:
@@ -828,6 +844,8 @@ def test_task_approval_is_relayed_and_answered_by_the_device(hub_server) -> None
         approval = relay.next_frame("event")
     body = approval["body"]
     assert body["device"] == "Desk" and "echo careful" in body["preview"] and body["approval_id"]
+    # what an answer remembered on the phone covers: the Sentinel's own key, not the preview
+    assert body["grant_key"] == "shell:echo"
     # the card is pending here too; the phone answers it over the hub
     pending = client.get("/api/state").json()["pending_approvals"]
     assert [p["id"] for p in pending] == [body["approval_id"]]

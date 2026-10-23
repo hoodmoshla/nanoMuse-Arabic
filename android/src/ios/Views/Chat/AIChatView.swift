@@ -2812,8 +2812,8 @@ struct AIChatView: View {
             }, onTakeoverDone: {
                 vm.resumeFromBrowserTakeover()
             })
-                .frame(maxWidth: maxContentWidth)
-                .padding(.horizontal, 12)
+                .frame(maxWidth: nmPill ? NanoMuseColumn.pillWidth(for: hSizeClass, otherwise: nil) : maxContentWidth) // nanoMuse: in the shell the bar is the composer pill's width
+                .padding(.horizontal, nmPill ? 16 : 12) // nanoMuse: and keeps its 16 pt margins
                 // [T-ios-geometry-observer-crash] onGeometryChange replaces the
                 // GeometryReader+onAppear+onChange scaffold: writing state from
                 // onChange(of: geo.*) inside the geometry-observer path re-drives
@@ -4527,6 +4527,7 @@ struct AIChatView: View {
         }
 
         private var iconName: String {
+            if let device = entry.nmDevice { return device.symbol } // nanoMuse: a phone or a computer of the account
             if entry.isDirectory { return "folder" }
             switch entry.scope {
             case .workspace:   return "doc.text"
@@ -4825,6 +4826,7 @@ private struct ComposerSurface: ViewModifier {
             content // nanoMuse:
                 .background(shape.fill(NanoMuseTones.bubble)) // nanoMuse:
                 .clipShape(shape) // nanoMuse:
+                .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 2) // nanoMuse: soft shadow matching Android
         } else if #available(iOS 26.0, *) {
             content
                 .glassEffect(.regular, in: shape)
