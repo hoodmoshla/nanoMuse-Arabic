@@ -21,6 +21,8 @@ import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
+import java.security.MessageDigest
+import java.io.File
 
 /**
  * Checks GitHub releases for an APK newer than [BuildConfig.VERSION_NAME] and
@@ -63,6 +65,12 @@ object UpdateChecker {
             val changelog: String,
             val apkUrl: String,
             val apkSizeBytes: Long,
+            /**
+             * Lowercase hex SHA-256 from the release's `.apk.sha256` asset, when one
+             * is published. Null only means the release did not publish a digest; the
+             * download is then refused rather than installed on a claim of size alone.
+             */
+            val expectedSha256: String? = null,
         ) : CheckResult()
         data object UpToDate : CheckResult()
         // The repo has zero non-draft releases (or 404'd entirely).
@@ -148,6 +156,7 @@ object UpdateChecker {
                     val isPrerelease: Boolean,
                     val apkUrl: String?,
                     val apkSize: Long,
+                    val expectedSha256: String? = null,
                 )
 
                 val candidates = mutableListOf<ReleaseInfo>()
@@ -156,15 +165,17 @@ object UpdateChecker {
                     if (r.optBoolean("draft", false)) continue
                     val tag = r.optString("tag_name")
                     if (tag.isEmpty()) continue
-                    val (apkUrl, apkSize) = findApkAsset(r.optJSONArray("assets"))
+                    val assets = r.optJSONArray("assets")
+                    val apk = apkAsset(assets)
                     candidates += ReleaseInfo(
                         tagName = tag,
                         versionName = normalizeTag(tag),
                         releaseName = r.optString("name").ifEmpty { tag },
                         changelog = r.optString("body", ""),
                         isPrerelease = r.optBoolean("prerelease", false),
-                        apkUrl = apkUrl,
-                        apkSize = apkSize,
+                        apkUrl = apk?.url,
+                        apkSize = apk?.size ?: 0L,
+                        expectedSha256 = apk?.let { publishedSha256(assets, it.name) },
                     )
                 }
                 AppLogger.info(
@@ -216,6 +227,7 @@ object UpdateChecker {
                         changelog = upgradeCandidate.changelog,
                         apkUrl = upgradeCandidate.apkUrl!!,
                         apkSizeBytes = upgradeCandidate.apkSize,
+                        expectedSha256 = upgradeCandidate.expectedSha256,
                     )
                 }
 
@@ -262,18 +274,72 @@ object UpdateChecker {
     /** Public so UI can deep-link users to manual download when GitHub is blocked. */
     const val RELEASES_URL: String = "https://github.com/hoodmoshla/nanoMuse-Arabic/releases"
 
+    /**
+     * A download is trusted only when it comes from this edition's own release
+     * assets over HTTPS. An official nanoMuse APK, or any other host, is not an
+     * update this app will fetch.
+     */
+    internal fun isTrustedDownloadUrl(url: String): Boolean {
+        val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return false
+        if (!uri.scheme.equals("https", ignoreCase = true)) return false
+        val host = uri.host?.lowercase() ?: return false
+        if (host != "github.com" && host != "objects.githubusercontent.com" &&
+            host != "release-assets.githubusercontent.com"
+        ) {
+            return false
+        }
+        val path = uri.path.orEmpty()
+        return path.startsWith("/$OWNER/$REPO/releases/download/") ||
+            path.contains("/$OWNER/$REPO/releases/download/")
+    }
+
+    /** Lowercase hex SHA-256 of a file. Exposed for the download gate and its test. */
+    internal fun sha256(file: File): String =
+        MessageDigest.getInstance("SHA-256").digest(file.readBytes())
+            .joinToString("") { "%02x".format(it) }
+
     /** Returns (downloadUrl, sizeBytes) for the first .apk asset, or (null, 0). */
     private fun findApkAsset(assets: JSONArray?): Pair<String?, Long> {
-        if (assets == null) return null to 0L
+        val found = apkAsset(assets)
+        return found?.url to (found?.size ?: 0L)
+    }
+
+    /**
+     * The published digest for [apkName], when the release ships a sibling
+     * `<apkName>.sha256`. GitHub's API does not carry a digest of its own, so
+     * this asset is the one the download is measured against.
+     */
+    internal fun publishedSha256(assets: JSONArray?, apkName: String): String? {
+        if (assets == null || apkName.isEmpty()) return null
+        val wanted = "$apkName.sha256"
+        for (i in 0 until assets.length()) {
+            val asset = assets.optJSONObject(i) ?: continue
+            if (!asset.optString("name").equals(wanted, ignoreCase = true)) continue
+            return normalizeSha256(asset.optString("digest_text").ifEmpty { asset.optString("body") })
+        }
+        return null
+    }
+
+    /** "sha256:ABCD…" or a `sha256sum` line → 64 lowercase hex digits, or null. */
+    internal fun normalizeSha256(text: String?): String? {
+        if (text.isNullOrBlank()) return null
+        val match = Regex("[A-Fa-f0-9]{64}").find(text) ?: return null
+        return match.value.lowercase()
+    }
+
+    private data class ApkAsset(val name: String, val url: String, val size: Long)
+
+    private fun apkAsset(assets: JSONArray?): ApkAsset? {
+        if (assets == null) return null
         for (i in 0 until assets.length()) {
             val a = assets.optJSONObject(i) ?: continue
             val name = a.optString("name").lowercase()
             if (name.endsWith(".apk")) {
                 val u = a.optString("browser_download_url").ifEmpty { null }
-                if (u != null) return u to a.optLong("size", 0)
+                if (u != null) return ApkAsset(a.optString("name"), u, a.optLong("size", 0))
             }
         }
-        return null to 0L
+        return null
     }
 
     /**
@@ -302,8 +368,16 @@ object UpdateChecker {
         context: Context,
         url: String,
         versionName: String? = null,
+        expectedSha256: String? = null,
         onProgress: (Float) -> Unit = {},
     ): DownloadResult = withContext(Dispatchers.IO) {
+            if (!isTrustedDownloadUrl(url)) {
+                return@withContext DownloadResult.Error("the download address is not this edition's GitHub release")
+            }
+            val expected = normalizeSha256(expectedSha256)
+            if (expected == null) {
+                return@withContext DownloadResult.Error("the release published no SHA-256 for this APK")
+            }
         try {
             // Stage under filesDir (NOT cacheDir) so the OS doesn't evict
             // the APK mid-flow while the user is in system Settings granting
@@ -354,9 +428,14 @@ object UpdateChecker {
             // returns from "install unknown apps" settings) can resume the
             // install without re-downloading. sha256 computed best-effort;
             // verify() falls back to size-only when null.
-            val sha = runCatching { PendingUpdateStore.sha256(outFile) }
+            val sha = runCatching { sha256(outFile) }
                 .onFailure { AppLogger.warning(TAG, "sha256 compute failed: ${it.message}") }
                 .getOrNull()
+            if (sha == null || sha != expected) {
+                outFile.delete()
+                AppLogger.warning(TAG, "refusing ${outFile.name}: SHA-256 does not match the release")
+                return@withContext DownloadResult.Error("the downloaded file does not match the published SHA-256")
+            }
             if (versionName != null) {
                 PendingUpdateStore.setPending(
                     context,
@@ -482,7 +561,7 @@ object UpdateChecker {
      * components fall back to lexicographic compare so a `1.0.0-rc1` build is
      * treated as "newer than 1.0.0" — acceptable noise for our use case.
      */
-    private fun compareVersions(a: String, b: String): Int {
+    internal fun compareVersions(a: String, b: String): Int {
         val ap = a.split('.', '-')
         val bp = b.split('.', '-')
         val n = maxOf(ap.size, bp.size)

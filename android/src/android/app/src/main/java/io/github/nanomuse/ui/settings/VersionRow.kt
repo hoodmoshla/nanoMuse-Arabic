@@ -63,6 +63,20 @@ private fun onTap(context: Context, s: UpdateCheck.State) {
     if (s.newer) openExternalUrl(context, UpdateCheck.DOWNLOAD_URL) else if (!s.checking) UpdateCheck.checkNow(context)
 }
 
+/** The version row is where the notice lives. Seeing a newer release acknowledges it. */
+@Composable
+private fun rememberAnnouncedVersionState(): UpdateCheck.State {
+    val context = LocalContext.current
+    val state = rememberVersionState()
+    LaunchedEffect(state.latest, state.newer) {
+        val latest = state.latest
+        if (state.newer && latest != null && UpdateCheck.shouldNotify(context, state)) {
+            UpdateCheck.acknowledge(context, latest)
+        }
+    }
+    return state
+}
+
 /** Reads the kept state and runs the daily check the first time the row is on screen. */
 @Composable
 private fun rememberVersionState(): UpdateCheck.State {
@@ -79,7 +93,7 @@ private fun rememberVersionState(): UpdateCheck.State {
 @Composable
 fun VersionRow() {
     val context = LocalContext.current
-    val s = rememberVersionState()
+    val s = rememberAnnouncedVersionState()
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -136,7 +150,7 @@ fun VersionRow() {
 @Composable
 fun VersionLines(modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val s = rememberVersionState()
+    val s = rememberAnnouncedVersionState()
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text = stringResource(R.string.nm_settings_version, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE),

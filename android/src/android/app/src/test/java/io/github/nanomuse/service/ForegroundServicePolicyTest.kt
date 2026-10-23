@@ -80,4 +80,20 @@ class ForegroundServicePolicyTest {
             assertTrue(ForegroundServicePolicy.shouldRun(active, 0))
         }
     }
+
+    /** A process restart with no remembered work does not revive the notification. */
+    @Test
+    fun `a restart with no work does not keep the service`() {
+        assertFalse(ForegroundServicePolicy.shouldRun(activeTasks = 0, pendingTasks = 0))
+    }
+
+    /**
+     * A task accepted from another device is pending work, not a reason to leave the service
+     * running after it ends. HubService is a separate connection and is not decided here.
+     */
+    @Test
+    fun `a task from another device keeps the service only while it is pending`() {
+        assertTrue(ForegroundServicePolicy.shouldRun(activeTasks = 0, pendingTasks = 1))
+        assertFalse(ForegroundServicePolicy.shouldRun(activeTasks = 0, pendingTasks = 0))
+    }
 }
