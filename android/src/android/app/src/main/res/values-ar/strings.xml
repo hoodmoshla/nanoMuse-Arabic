@@ -59,6 +59,8 @@
     <string name="check_update_install_launch_failed">فشل تشغيل مُثبّت التطبيق. تحقّق من إذن \"تثبيت التطبيقات غير المعروفة\" أو افتح ملف APK الذي تم تنزيله يدويًا.</string>
     <string name="check_update_install_hint">ملاحظة: إذا لم يظهر أي رد أثناء التثبيت، فقد يكون التوقيع غير مطابق. أزل الإصدار السابق أولًا، ثم حمّل الملف مرة أخرى.</string>
     <string name="check_update_open_install_settings">افتح الإعدادات</string>
+    <string name="check_update_digest_mismatch">الملف الذي تم تنزيله لا يطابق SHA-256 المنشور، لذلك لم يُثبَّت.</string>
+    <string name="check_update_view_release">عرض التحديث</string>
 
     <!-- Permissions (Settings → Permissions) -->
     <string name="permissions_title">الأذونات</string>

@@ -70,7 +70,10 @@ async function call<T>(gateway: string, path: string, init?: RequestInit): Promi
   }
   if (!res.ok) {
     const err = (data ?? {}) as { error?: string; message?: string; detail?: unknown };
-    throw new DemoError(err.error ?? String(res.status), err.message ?? `The showcase server answered ${res.status}.`);
+    // a refusal without a code (a 422 from the server's own input check, a 502 from the
+    // front) gets one the strings know, so the visitor reads it in their language
+    const code = err.error ?? (res.status >= 500 ? 'server_error' : 'bad_request');
+    throw new DemoError(code, err.message ?? `The showcase server answered ${res.status}.`);
   }
   return data as T;
 }
@@ -130,13 +133,22 @@ export async function startDemoSession(
 ): Promise<DemoSession> {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (ticket) headers.authorization = `Bearer ${ticket}`;
+  // the visitor's time zone goes with the request: the Muse's clock (what "in 2 minutes"
+  // and "at 17:58" mean in its replies and reminders) is then the visitor's, not the server's
+  const body: { provider?: DemoProvider; time_zone?: string } = provider ? { provider } : {};
+  try {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (zone) body.time_zone = zone;
+  } catch {
+    // no Intl, or no zone to tell: the Muse keeps the server's clock
+  }
   const raw = await call<{ id: string; server_url: string; token: string; expires_at: number; byok: boolean }>(
     gateway,
     '/session',
     {
       method: 'POST',
       headers,
-      body: JSON.stringify(provider ? { provider } : {}),
+      body: JSON.stringify(body),
     },
   );
   return { id: raw.id, serverUrl: raw.server_url, token: raw.token, expiresAt: raw.expires_at, byok: raw.byok };

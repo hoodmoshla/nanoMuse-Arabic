@@ -55,6 +55,8 @@
     <string name="check_update_install_launch_failed">Gagal membuka pemasang. Semak kebenaran \"pasang aplikasi tidak dikenali\" atau buka APK yang telah dimuat turun secara manual.</string>
     <string name="check_update_install_hint">Petua: Jika pemasangan tiada sebarang maklum balas, tandatangan aplikasi mungkin tidak sepadan — nyahpasang versi terdahulu dahulu, kemudian muat turun semula.</string>
     <string name="check_update_open_install_settings">Buka Tetapan</string>
+    <string name="check_update_digest_mismatch">Fail yang dimuat turun tidak sepadan dengan SHA-256 yang diterbitkan, jadi ia tidak dipasang.</string>
+    <string name="check_update_view_release">Lihat kemas kini</string>
     <string name="permissions_title">Kebenaran</string>
     <string name="permissions_reset_all">Tetap Semula Semua</string>
     <string name="permissions_reset_dialog_title">Tetap Semula Semua Kebenaran?</string>

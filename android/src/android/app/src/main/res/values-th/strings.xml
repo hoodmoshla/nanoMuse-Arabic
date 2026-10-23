@@ -55,6 +55,8 @@
     <string name="check_update_install_launch_failed">เปิดตัวติดตั้งไม่สำเร็จ ตรวจสอบสิทธิ์ \"ติดตั้งแอปที่ไม่รู้จัก\" หรือเปิดไฟล์ APK ที่ดาวน์โหลดไว้ด้วยตนเอง</string>
     <string name="check_update_install_hint">เคล็ดลับ: หากติดตั้งแล้วไม่มีการตอบสนอง ลายเซ็นอาจไม่ตรงกัน ให้ถอนการติดตั้งเวอร์ชันเดิมก่อน แล้วดาวน์โหลดใหม่</string>
     <string name="check_update_open_install_settings">เปิดการตั้งค่า</string>
+    <string name="check_update_digest_mismatch">ไฟล์ที่ดาวน์โหลดไม่ตรงกับ SHA-256 ที่เผยแพร่ จึงไม่ได้ติดตั้ง</string>
+    <string name="check_update_view_release">ดูอัปเดต</string>
     <string name="permissions_title">สิทธิ์</string>
     <string name="permissions_reset_all">รีเซ็ตทั้งหมด</string>
     <string name="permissions_reset_dialog_title">รีเซ็ตสิทธิ์ทั้งหมดหรือไม่</string>

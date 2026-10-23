@@ -55,6 +55,8 @@
     <string name="check_update_install_launch_failed">Échec du lancement de l\'installateur. Vérifiez l\'autorisation \"installer des applications inconnues\" ou ouvrez l\'APK téléchargé manuellement.</string>
     <string name="check_update_install_hint">Astuce : si l\'installation ne donne aucun retour, la signature peut ne pas correspondre — désinstallez d\'abord la version précédente, puis téléchargez à nouveau.</string>
     <string name="check_update_open_install_settings">Ouvrir les paramètres</string>
+    <string name="check_update_digest_mismatch">Le fichier téléchargé ne correspond pas au SHA-256 publié, il n’a donc pas été installé.</string>
+    <string name="check_update_view_release">Voir la mise à jour</string>
     <string name="permissions_title">Autorisations</string>
     <string name="permissions_reset_all">Tout réinitialiser</string>
     <string name="permissions_reset_dialog_title">Réinitialiser toutes les autorisations ?</string>

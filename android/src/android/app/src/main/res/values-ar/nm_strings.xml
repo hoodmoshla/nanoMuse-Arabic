@@ -625,7 +625,6 @@
     <string name="nm_welcome_skip">تخطي الآن</string>
     <string name="nm_welcome_hands_fine_print">كل ما عدا ذلك يعمل دون هذه الميّزات. تجدها تحت الإعدادات → Hands متى شئت.</string>
     <string name="nm_welcome_meet_fine_print">قبل أي إجراء لا يمكن التراجع عنه (حذف، إرسال، دفع) يتوقف ويسألك أولًا.</string>
-    <string name="nm_cloud_title">سحابة nanoMuse</string>
     <string name="nm_cloud_signin_title">ابدأ مع nanoMuse السحابة</string>
     <string name="nm_cloud_signin_subtitle">رمز يُرسل إلى هاتفك أو إلى صندوق الوارد، أو كلمة المرور الخاصة بك إذا قمت بتعيينها.</string>
     <string name="nm_cloud_mode_code">باستخدام رمز</string>
@@ -642,7 +641,6 @@
     <!-- Your own relay (0.1.38): the sign-in screen's server form and the account page's row -->
     <string name="nm_cloud_other_server">استخدم خادمًا مختلفًا</string>
     <string name="nm_cloud_server_url">عنوان المرسل</string>
-    <string name="nm_cloud_server_hint">مثال: https://relay.example.org</string>
     <string name="nm_cloud_server_check">تحقق</string>
     <string name="nm_cloud_server_use">استخدم هذا الخادم</string>
     <string name="nm_cloud_server_now">الخادم: %1$s</string>
@@ -747,7 +745,7 @@
     <string name="nm_face_cost_not_now">ليس الآن</string>
     <string name="nm_face_cost_declined">حسنًا، يبقى الوجه كما هو.</string>
     <string name="nm_cloud_invite_title">دعوة صديق</string>
-    <string name="nm_cloud_invite_why">كل شخص جديد يسجّل باستخدام رمزك يضيف ¥%1$s إلى حصتك، و¥%1$s إلى حصته. لا تنتهي صلاحيتها.</string>
+    <string name="nm_cloud_invite_why">عندما يسجّل صديق برمزك ويرسل طلبه الأول، تحصلان معًا على ¥%1$s. لا تنتهي صلاحيتها.</string>
     <string name="nm_cloud_invite_code">رمزك</string>
     <string name="nm_cloud_invite_share">مشاركة الرابط</string>
     <string name="nm_cloud_invite_copy">نسخ</string>
@@ -1100,4 +1098,60 @@
     <string name="nm_models_search">ابحث في النماذج</string>
     <string name="nm_models_search_clear">مسح البحث</string>
     <string name="nm_models_no_match">لا يوجد نموذج مطابق</string>
+
+    <!-- v1.0.5: a scheduled turn is the routine's, not a message the person typed -->
+    <string name="nm_routine_wake_caption">روتين · %1$s · %2$s</string>
+
+    <!-- v1.0.5: a clip of the person's own as the face at rest -->
+    <string name="nm_own_clip_title">مقطعك الخاص</string>
+    <string name="nm_own_clip_body">يعرض مقطع فيديو قصير من عندك بوصفه الوجه في حالة السكون، وتعود إليه الحالات الأخرى. MP4 أو MOV بفيديو H.264، حتى 15 ثانية و30 ميغابايت، ويُشغَّل بلا صوت في حلقة.</string>
+    <string name="nm_own_clip_on">مقطعك مفعّل ويُعرض لكل الحالات المزاجية، وتبقى الرسوم الثابتة حيث تُستخدم صورة ثابتة. «الوجه الافتراضي» يزيله.</string>
+    <string name="nm_own_clip_local">يبقى المقطع على هذا الهاتف. لا يُرفع إلى nanoMuse Cloud ولا يُزامَن مع أجهزتك الأخرى.</string>
+    <string name="nm_own_clip_choose">اختر مقطعًا</string>
+    <string name="nm_own_clip_replace">استبدل المقطع</string>
+    <string name="nm_own_clip_default">الوجه الافتراضي</string>
+    <string name="nm_own_clip_menu">مقطعك الخاص…</string>
+    <string name="nm_own_clip_preview_title">معاينة</string>
+    <string name="nm_own_clip_preview_body">هكذا يظهر بوصفه الوجه: بلا صوت، في حلقة، مقصوصًا داخل الدائرة.</string>
+    <string name="nm_own_clip_details">%1$d ث · %2$s</string>
+    <string name="nm_own_clip_use">استخدام</string>
+    <string name="nm_own_clip_refused_format">لا يمكن استخدام هذا الملف هنا. اختر MP4 أو MOV بفيديو H.264، حتى 15 ثانية و30 ميغابايت.</string>
+    <string name="nm_own_clip_refused_long">يمتد هذا المقطع %1$d ثانية. الحد هو 15 ثانية و30 ميغابايت.</string>
+    <string name="nm_own_clip_refused_large">حجم هذا المقطع %1$s. الحد هو 30 ميغابايت و15 ثانية.</string>
+    <string name="nm_own_clip_unreadable">تعذرت قراءة المقطع. جرّب مقطعًا آخر.</string>
+    <string name="nm_a11y_own_clip_preview">معاينة مقطعك</string>
+
+    <string name="nm_risk_preview_show_all">عرض الكل (%1$d سطرًا)</string>
+    <string name="nm_risk_preview_show_less">عرض أقل</string>
+
+    <string name="nm_cloud_err_domain_limited">بلغ حد التسجيل اليومي لعناوين هذا النطاق على هذا المرسِل. أعد المحاولة غدًا، أو استخدم عنوانًا آخر.</string>
+    <string name="nm_cloud_err_channel_unsupported">لا يرسل هذا المرسِل الرموز إلى هذا النوع من العناوين. استخدم النوع الآخر (بريدًا إلكترونيًا أو رقم هاتف)، أو سجّل الدخول بكلمة مرور.</string>
+
+    <string name="nm_a11y_show_password">إظهار كلمة المرور</string>
+    <string name="nm_a11y_hide_password">إخفاء كلمة المرور</string>
+    <string name="nm_a11y_avatar_candidate">المرشح %1$d</string>
+    <string name="nm_a11y_share_card">البطاقة %1$d</string>
+    <string name="nm_a11y_add">إضافة</string>
+    <string name="nm_a11y_mark_done">تعليم كمنجز</string>
+    <string name="nm_a11y_mark_not_done">تعليم كغير منجز</string>
+    <string name="nm_a11y_done">منجز</string>
+    <string name="nm_a11y_not_done">غير منجز</string>
+    <string name="nm_a11y_like">إعجاب</string>
+    <string name="nm_a11y_unlike">إلغاء الإعجاب</string>
+    <string name="nm_a11y_liked">أُعجِب به</string>
+    <string name="nm_a11y_not_liked">لم يُعجَب به</string>
+    <string name="nm_a11y_post_details">تفاصيل المنشور</string>
+
+    <string name="nm_claude_sign_in_unavailable">لا يستطيع هذا الإصدار استخدام تسجيل دخول Claude. أضف Anthropic بمفتاح API بدلًا من ذلك.</string>
+    <string name="nm_oauth_rescue_hint">إذا أظهر المتصفح صفحة خطأ على localhost، فإن الوكيل أو VPN يبتلع عنوان العودة. أضف localhost إلى قائمة الاستثناء، أو انسخ عنوان الصفحة والصقه هنا.</string>
+    <string name="nm_oauth_rescue_placeholder">الصق العنوان هنا</string>
+    <string name="nm_oauth_rescue_continue">متابعة</string>
+    <string name="nm_oauth_rescue_no_code">لا يحمل هذا العنوان رمز تسجيل دخول.</string>
+    <string name="nm_oauth_rescue_failed">لم يعد تسجيل الدخول ينتظر هذا العنوان. اضغط على «تسجيل الدخول» وحاول مجددًا.</string>
+
+    <string name="nm_font_scale_extra_small">صغير جدًا</string>
+    <string name="nm_font_scale_small">صغير</string>
+    <string name="nm_font_scale_medium">متوسط</string>
+    <string name="nm_font_scale_large">كبير</string>
+    <string name="nm_font_scale_extra_large">كبير جدًا</string>
 </resources>

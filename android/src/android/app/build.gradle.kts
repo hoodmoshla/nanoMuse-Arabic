@@ -85,8 +85,8 @@ android {
         applicationId = "io.github.nanomuse.arabic"
         minSdk = 26
         targetSdk = 35
-        versionCode = 44
-        versionName = "1.0.1"
+        versionCode = 48
+        versionName = "1.0.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -146,6 +146,12 @@ android {
     }
 
     androidResources {
+        // nanoMuse-Arabic: upstream's line, restored. It reads "gz" here for a while, on the
+        // theory that aapt2 was renaming the Alpine asset; it does not — aapt2 unpacks a `.gz`
+        // asset and the app reads whichever of `alpine-minirootfs.tar.gz` and `.tar` it finds
+        // (RootfsManager), and the check in scripts/arabic-release-apk.sh now verifies those bytes
+        // rather than the name. What "gz" did do was tell aapt2 not to compress an asset it had
+        // already unpacked, which is how a ~100 MB tar ends up stored raw inside the APK.
         noCompress += listOf("tar.gz", "proot-aarch64")
     }
 
@@ -233,6 +239,10 @@ dependencies {
     implementation(composeBom)
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
+
+    // nanoMuse: the frosted-glass pill bottom bar: Haze backdrop blur, in the Pixel taskbar's manner.
+    // 1.6.10, not 2.x: Haze 1.7.x and 2.x need compileSdk 37, and this module is on 36.
+    implementation("dev.chrisbanes.haze:haze-android:1.6.10")
 
     // nanoMuse: the camera on a video call (a JPEG frame a second to the real-time model).
     val cameraX = "1.4.2"
@@ -358,6 +368,8 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("org.json:json:20231013")
+    // nanoMuse: Exercise Android speech factories and dispatch in JVM regression tests.
+    testImplementation("org.mockito:mockito-core:5.24.0")
 
     // Testing — Instrumented (on-device) tests
     // [T-android-downgrade-compat] MigrationTestHelper replays the committed

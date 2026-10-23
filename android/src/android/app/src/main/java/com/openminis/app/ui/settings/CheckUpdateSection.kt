@@ -214,6 +214,7 @@ fun CheckUpdateSection() {
                         context = context,
                         url = u.apkUrl,
                         versionName = u.versionName,
+                        expectedSha256 = u.expectedSha256,
                     ) { p -> downloadProgress = p }
                     when (result) {
                         is UpdateChecker.DownloadResult.Success -> {

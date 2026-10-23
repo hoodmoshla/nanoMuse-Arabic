@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -108,6 +109,10 @@ fun AvatarStudioScreen(onBack: () -> Unit, onOpenSoul: () -> Unit, onOpenMediaMo
     var style by remember(savedStyle) { mutableStateOf(savedStyle) }
     var menu by remember { mutableStateOf(false) }
     var previewMood by remember { mutableStateOf(AgentMood.IDLE) }
+    // A clip of the person's own as the face (#324): picked here, previewed in a sheet.
+    val ownClip by io.github.nanomuse.avatar.OwnClip.current.collectAsState()
+    val clipChooser = rememberOwnClipChooser()
+    OwnClipChooserHost(clipChooser)
     val generating = slots.any { it is AvatarStudio.Slot.Loading }
     // Read each time: the media page may have changed it while this screen was below it.
     val endpoint = ImageGen.endpoint(context)
@@ -140,12 +145,19 @@ fun AvatarStudioScreen(onBack: () -> Unit, onOpenSoul: () -> Unit, onOpenMediaMo
                 Box {
                     Surface(onClick = { menu = true }, shape = CircleShape, color = MuseTones.surface, border = BorderStroke(1.dp, MuseTones.hairline)) {
                         Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Filled.MoreHoriz, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
+                            Icon(Icons.Filled.MoreHoriz, contentDescription = stringResource(R.string.nm_more), tint = MaterialTheme.colorScheme.onSurface)
                         }
                     }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         DropdownMenuItem(text = { Text(stringResource(R.string.nm_avatar_menu_soul)) }, onClick = { menu = false; onOpenSoul() })
                         DropdownMenuItem(text = { Text(stringResource(R.string.nm_avatar_menu_model)) }, onClick = { menu = false; onOpenMediaModels() })
+                        DropdownMenuItem(text = { Text(stringResource(R.string.nm_own_clip_menu)) }, onClick = { menu = false; clipChooser.choose() })
+                        if (ownClip != null) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.nm_own_clip_default)) },
+                                onClick = { menu = false; io.github.nanomuse.avatar.OwnClip.clear() },
+                            )
+                        }
                         if (current != null) {
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.nm_avatar_menu_regenerate_moods)) },
@@ -315,6 +327,7 @@ fun AvatarStudioScreen(onBack: () -> Unit, onOpenSoul: () -> Unit, onOpenMediaMo
                                     val i = row * 2 + col
                                     CandidateTile(
                                         slot = slots[i],
+                                        index = i,
                                         selected = selected == i,
                                         onClick = {
                                             when (slots[i]) {
@@ -356,6 +369,52 @@ fun AvatarStudioScreen(onBack: () -> Unit, onOpenSoul: () -> Unit, onOpenMediaMo
                     }
                 }
             }
+            item(key = "own-clip") {
+                Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+                    HorizontalDivider(color = MuseTones.hairline)
+                    Spacer(Modifier.height(14.dp))
+                    Text(stringResource(R.string.nm_own_clip_title), fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        stringResource(if (ownClip != null) R.string.nm_own_clip_on else R.string.nm_own_clip_body),
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(
+                            onClick = { clipChooser.choose() },
+                            modifier = Modifier.weight(1f).height(44.dp),
+                            shape = CircleShape,
+                            colors = ButtonDefaults.buttonColors(containerColor = MuseTones.fill, contentColor = MaterialTheme.colorScheme.onSurface),
+                        ) {
+                            Text(
+                                stringResource(if (ownClip != null) R.string.nm_own_clip_replace else R.string.nm_own_clip_choose),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                            )
+                        }
+                        if (ownClip != null) {
+                            Button(
+                                onClick = { io.github.nanomuse.avatar.OwnClip.clear() },
+                                modifier = Modifier.weight(1f).height(44.dp),
+                                shape = CircleShape,
+                                colors = ButtonDefaults.buttonColors(containerColor = MuseTones.fill, contentColor = MaterialTheme.colorScheme.onSurface),
+                            ) {
+                                Text(stringResource(R.string.nm_own_clip_default), fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        stringResource(R.string.nm_own_clip_local),
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             item(key = "footer") {
                 Text(
                     stringResource(R.string.nm_avatar_footer),
@@ -371,24 +430,25 @@ fun AvatarStudioScreen(onBack: () -> Unit, onOpenSoul: () -> Unit, onOpenMediaMo
 }
 
 @Composable
-private fun CandidateTile(slot: AvatarStudio.Slot, selected: Boolean, onClick: () -> Unit, modifier: Modifier) {
+private fun CandidateTile(slot: AvatarStudio.Slot, index: Int, selected: Boolean, onClick: () -> Unit, modifier: Modifier) {
     val shape = RoundedCornerShape(20.dp)
     val shimmer = rememberInfiniteTransition(label = "shimmer")
     val a by shimmer.animateFloat(0.45f, 1f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "shimmerAlpha")
+    // selectable, not clickable: a screen reader then says "selected" or "not selected" for the tile.
     Box(
         modifier
             .aspectRatio(1f)
             .clip(shape)
             .background(MuseTones.fill)
             .then(if (selected) Modifier.border(3.dp, MuseTones.action, shape) else Modifier)
-            .clickable(onClick = onClick),
+            .selectable(selected = selected, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         when (slot) {
             is AvatarStudio.Slot.Ready -> {
                 Image(
                     bitmap = slot.bitmap.asImageBitmap(),
-                    contentDescription = null,
+                    contentDescription = stringResource(R.string.nm_a11y_avatar_candidate, index + 1),
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
                 )

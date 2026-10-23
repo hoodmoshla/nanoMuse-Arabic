@@ -34,7 +34,7 @@ permissions:
 env:
   # The branch the Arabic edition lives on, and the base of every sync pull request. Change it
   # here when that work moves.
-  ARABIC_BRANCH: codex/arabic-standalone-phase2
+  ARABIC_BRANCH: update/v1.0.5-arabic
   UPSTREAM: nano-muse/nanoMuse
 
 jobs:
@@ -142,8 +142,33 @@ jobs:
           git remote add upstream "https://github.com/$UPSTREAM"
           git fetch --no-tags --filter=blob:none upstream "refs/tags/${{ needs.gap.outputs.release }}:refs/tags/${{ needs.gap.outputs.release }}"
 
+      # The same decision the tests cover: a draft, a repeated tag, or a branch already waiting
+      # for review is not prepared again. A failed check later refuses to publish.
+      - name: Is this release still ours to prepare
+        id: gate
+        run: |
+          set -euo pipefail
+          merged="$(git tag -l | paste -sd, -)"
+          open_branches="$(git ls-remote --heads origin 'upstream/*' | awk '{print $2}' | sed 's#refs/heads/##' | paste -sd, -)"
+          python3 scripts/upstream_sync.py \
+            --tag "${{ needs.gap.outputs.release }}" \
+            --merged "$merged" \
+            --open-branches "$open_branches" \
+            --out sync-decision.txt
+          decision="$(cut -d: -f1 sync-decision.txt)"
+          echo "action=$decision" >> "$GITHUB_OUTPUT"
+          echo "decision: $(cat sync-decision.txt)"
+
+      - name: Stop when the release was already prepared or is not stable
+        if: steps.gate.outputs.action == 'skip' || steps.gate.outputs.action == 'stop'
+        run: |
+          echo "the sync gate did not prepare a branch:"
+          cat sync-decision.txt
+          exit 0
+
       - name: Merge it into a branch of its own
         id: merge
+        if: steps.gate.outputs.action != 'skip' && steps.gate.outputs.action != 'stop'
         run: |
           set -euo pipefail
           base="${{ needs.gap.outputs.release }}"

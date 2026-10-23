@@ -37,7 +37,7 @@ bash scripts/self-host.sh --local          # http://127.0.0.1:8787, codes in the
 bash scripts/self-host.sh --local --bind 0.0.0.0   # reachable from the phones on the same network
 ```
 
-不用脚本、自己动手：`cd cloud && cp .env.example .env`，填上 `CLOUD_DOMAIN`、`PUBLIC_BASE`、`ACME_EMAIL`、`CLOUD_SECRET`、`CLOUD_ADMIN_TOKEN`、`UPSTREAM_KEY` 和发信设置，然后 `docker compose up -d`；或者不要 Caddy，`docker compose -f docker-compose.yml -f docker-compose.local.yml up -d`。
+不用脚本、自己动手：`cd cloud && cp .env.example .env`，填上 `CLOUD_DOMAIN`、`PUBLIC_BASE`、`ACME_EMAIL`、`CLOUD_SECRET`、`CLOUD_ADMIN_TOKEN`、`UPSTREAM_KEY` 和发信设置，然后 `docker compose up -d`；或者不要 Caddy，`docker compose -f docker-compose.yml -f docker-compose.local.yml up -d`。中继在容器里以 uid 10001 运行，绑定挂载的数据目录 `cloud/data` 在宿主机上必须属于这个 uid：第一次启动前执行 `mkdir -p data && sudo chown -R 10001:10001 data`，从以 root 运行的旧镜像升级时再执行一次（脚本会替你做；写不了数据目录的中继会在启动时说明原因并停下）。
 
 ### 登录验证码 {#sign-in-codes}
 
@@ -55,7 +55,7 @@ bash scripts/self-host.sh --local --bind 0.0.0.0   # reachable from the phones o
 
 每个 App 默认都在 `https://cloud.nanomuse.cn` 上登录，除非你另外告诉它。同一个账号的设备必须都指向同一个中继；hub 和对话都在那里。
 
-- **Android**（0.1.38）。登录表单下面的「使用其他服务器」填中继地址；「检查」会访问它的 `/healthz` 并显示版本，「使用这个服务器」让这个地址在重启 App 之后也保留。在你自己的网络之外必须用 `https://`；私有地址（`10.x`、`172.16–31.x`、`192.168.x`、`localhost`、`.local` 或 `.ts.net` 名字）接受明文 `http://`。「设置 → 账号」显示当前服务器和「更换」，更换会先把手机退出登录（[android.md](android.md)）。
+- **Android**（0.1.38）。登录表单下面的「使用其他服务器」填中继地址；「检查」会访问它的 `/healthz` 并显示版本，「使用这个服务器」让这个地址在重启 App 之后也保留。在你自己的网络之外必须用 `https://`；私有地址（`10.x`、`172.16-31.x`、`192.168.x`、`localhost`、`.local` 或 `.ts.net` 名字）接受明文 `http://`。「设置 → 账号」显示当前服务器和「更换」，更换会先把手机退出登录（[android.md](android.md)）。
 - **iPhone / iPad。** 登录页上同样的链接，同样的规则。
 - **nanoMuse 桌面版。** 中继就是插件 cloud 一行的 `baseURL`。把下面这段加进桌面版配置档 `~/.nanomuse/desktop/profiles/nanomuse/`（Windows 上是 `%USERPROFILE%\.nanomuse\desktop\profiles\nanomuse\`；`NANOMUSE_DESKTOP_HOME` 可以把它挪走）里的 `cordis.patch.yml`，然后重启应用：
 
@@ -89,9 +89,19 @@ bash scripts/self-host.sh        # Enter through the questions; secrets and acco
 中继保存的一切就是 `cloud/data/cloud.db`（SQLite）加上 `cloud/.env` 里的 `CLOUD_SECRET`。没有这个密钥，数据库就没用（标识符是用它哈希和加密的，还在等待使用的登录验证码也是，那只有六位数字），没有数据库，密钥也没用；两样一起备份，而且除非你打算从头来过，否则绝不要更换密钥：
 
 ```bash
-cd cloud && docker compose exec relay sqlite3 /srv/nanomuse-cloud/data/cloud.db ".backup /srv/nanomuse-cloud/data/backup.db" \
-  || cp data/cloud.db data/backup.db   # when the container has no sqlite3: stop the relay first for a clean copy
+cd cloud && docker compose exec -T relay python - > cloud-$(date -u +%Y%m%d).db <<'EOF'
+import os, shutil, sqlite3, sys
+src = sqlite3.connect("/srv/nanomuse-cloud/data/cloud.db")
+dst = sqlite3.connect("/tmp/backup.db")
+src.backup(dst)
+dst.close(); src.close()
+with open("/tmp/backup.db", "rb") as f:
+    shutil.copyfileobj(f, sys.stdout.buffer)
+os.remove("/tmp/backup.db")
+EOF
 ```
+
+副本由运行中的容器里 SQLite 自带的备份接口生成（镜像里没有 `sqlite3` 命令），再流式输出到宿主机：中继一边写它也是一致的，落下来的文件归你所有，不在属于 uid 10001 的数据目录里。直接 `cp data/cloud.db` 做不到这一点：WAL 模式下最新的写入还在 `cloud.db-wal` 里，只复制主文件会漏掉它们。
 
 Caddy 的证书在 `caddy_data` 卷里，丢了会重新申请。
 

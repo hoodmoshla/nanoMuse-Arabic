@@ -3722,17 +3722,30 @@ class ChatViewModel(
         // nanoMuse: the main chat follows the chat slot (Settings › Models, the "Use it for"
         // card, a pick in a chat's picker: ModelSlots.followPick → mainChatFollows). Its row is
         // rewritten there; this view-model lives as long as the app, so it is told as well and
-        // re-resolves to the group that now leads with the pick. A side chat keeps its model.
+        // re-resolves to the group that now leads with the pick. A draft (no row yet, not opened
+        // on a group of its own) follows too: it resolved the default when it was built and
+        // would otherwise send its first message through the provider the default was on then,
+        // whatever the Models page says. A side chat with a row keeps its model.
         viewModelScope.launch {
             sessionLoaded.first { it }
             io.github.nanomuse.models.ModelSlots.chatSlotWritten.collect { pick ->
-                val sid = realSessionId.takeIf { it.isNotEmpty() } ?: return@collect
+                val sid = realSessionId.ifEmpty { sessionId }
                 val isMain = io.github.nanomuse.home.MainChat.isMain(context, sid)
-                if (!io.github.nanomuse.models.MainChatFollow.shouldMove(isMain, _activeEntryId.value, _selectedGroupId.value, pick)) return@collect
+                val isNew = realSessionId.isEmpty() && initialGroupId == null
+                if (!io.github.nanomuse.models.MainChatFollow.shouldMove(isMain, _activeEntryId.value, _selectedGroupId.value, pick, isNew)) return@collect
                 if (resolveProviderFromGroup(pick.groupId, pick.entryId)) {
                     _selectedGroupId.value = pick.groupId
+                    val group = providerRepository.group(pick.groupId)
+                    _selectedGroupName.value = group?.name ?: ""
                     _activeEntryId.value?.let { persistBinding(io.github.nanomuse.models.MainChatFollow.binding(pick.copy(entryId = it))) }
-                    AppLogger.info(TAG, "🔀RESOLVE main chat follows the chat slot: group=${pick.groupId} entry=${_activeEntryId.value} model=${currentModel?.id}")
+                    // the group's default thinking level comes along, as it does when the group is
+                    // picked in this chat's own picker (applyGroupSessionDefaults) and on the
+                    // iPhone; a draft has no row to write it to and keeps it in memory
+                    group?.defaultThinkingLevel?.takeIf { it != _thinkingLevel.value }?.let { level ->
+                        _thinkingLevel.value = level
+                        if (realSessionId.isNotEmpty()) chatRepository.dao.updateThinkingOverride(realSessionId, level.name)
+                    }
+                    AppLogger.info(TAG, "🔀RESOLVE ${if (isMain) "main chat" else "draft"} follows the chat slot: group=${pick.groupId} entry=${_activeEntryId.value} model=${currentModel?.id}")
                 }
             }
         }
@@ -5791,7 +5804,7 @@ class ChatViewModel(
 
         val baseSystemPrompt = buildSystemPrompt()
         val systemPrompt = if ((provider as? com.openminis.app.provider.anthropic.AnthropicProvider)?.isOAuth == true) {
-            val prefix = com.openminis.app.auth.ClaudeOAuthManager.ANTHROPIC_OAUTH_IDENTIFIER_PROMPT
+            val prefix = io.github.nanomuse.cloud.ClaudeSignIn.identifier // nanoMuse: empty on a build without it, never throws; the provider refuses the send (#373)
             if (baseSystemPrompt?.startsWith(prefix) == true) baseSystemPrompt
             else "$prefix\n\n${baseSystemPrompt ?: ""}"
         } else baseSystemPrompt
@@ -6965,7 +6978,9 @@ class ChatViewModel(
         if (editingId != null) _editingMessageId.value = null
 
         viewModelScope.launch {
+            streamJob = coroutineContext[Job] // nanoMuse: Stop during the setup (session, attachments, the user row) cancels it too, not only the agent loop launched below (#340)
             var streamLaunched = false
+            var userRowShown = false // nanoMuse: set once the person's line is on screen; a Stop before that gives the composer its text back (#340)
             try {
             // Ensure session exists in DB (creates on first message for draft sessions)
             val activeSessionId = ensureSession()
@@ -6997,6 +7012,7 @@ class ChatViewModel(
             )
             val persistedUser = chatRepository.appendMessage(activeSessionId, "user", userPartsJson)
             io.github.nanomuse.sync.ConversationSync.sent(activeSessionId) // nanoMuse: the person's line reaches the other devices at send (C8), then "working" (C9)
+            io.github.nanomuse.chat.RoutineWakes.claim(activeSessionId, persistedUser.id) // nanoMuse: a routine's prompt is marked as such on its row
 
             val userMsg = ChatMessage(
                 id = persistedUser.id,
@@ -7021,6 +7037,7 @@ class ChatViewModel(
                 attachmentUris = prepared.nonImageUris + (pasted?.uiUris ?: emptyList()),
             )
             _messages.value = _messages.value + userMsg
+            userRowShown = true // nanoMuse: (#340)
             val imageParts = prepared.imageParts
 
             // T132: build the user contentParts in iOS order — caption first
@@ -7089,7 +7106,7 @@ class ChatViewModel(
             // Anthropic OAuth requires the Claude Code prefix in the system prompt
             val baseSystemPrompt = buildSystemPrompt()
             val systemPrompt = if ((provider as? com.openminis.app.provider.anthropic.AnthropicProvider)?.isOAuth == true) {
-                val prefix = com.openminis.app.auth.ClaudeOAuthManager.ANTHROPIC_OAUTH_IDENTIFIER_PROMPT
+                val prefix = io.github.nanomuse.cloud.ClaudeSignIn.identifier // nanoMuse: empty on a build without it, never throws; the provider refuses the send (#373)
                 if (baseSystemPrompt?.startsWith(prefix) == true) baseSystemPrompt
                 else "$prefix\n\n${baseSystemPrompt ?: ""}"
             } else baseSystemPrompt
@@ -7174,6 +7191,14 @@ class ChatViewModel(
                 }
                 AppLogger.info(TAG_STREAM, "send streamJob EXIT")
             }
+            } catch (e: CancellationException) {
+                // nanoMuse: Stop before the user row is on screen means the message was not sent; the
+                // composer gets its text and attachments back instead of losing them (#340)
+                if (!streamLaunched && !userRowShown) {
+                    if (_inputText.value.isEmpty()) _inputText.value = text
+                    if (_attachments.value.isEmpty()) _attachments.value = currentAttachments
+                }
+                throw e
             } finally {
                 if (!streamLaunched) {
                     AppLogger.info(TAG_STREAM, "send _isStreaming=false (setup aborted)")
@@ -7197,8 +7222,11 @@ class ChatViewModel(
         // would stick across reloads. An exception with a blank `message`
         // (`e.message ?: "Unknown error"` only guards null, not "") is the
         // realistic source. Coalesce to a generic non-empty message.
-        // nanoMuse: a turn refused for a spent allowance gets the plain sentence and the ways-on card.
-        val safeError = nmAllowanceErrorText(errorText.ifBlank { context.getString(R.string.error_empty_response_generic) })
+        // nanoMuse: a turn refused for a spent allowance gets the plain sentence and the ways-on card;
+        // a Claude sign-in on a build without its identifier gets its sentence in the person's language (#373).
+        val safeError = nmAllowanceErrorText(
+            io.github.nanomuse.cloud.ClaudeSignIn.userText(context, errorText).ifBlank { context.getString(R.string.error_empty_response_generic) },
+        )
         // T-streaming-side-channel: before mutating the canonical message,
         // drain any in-flight streaming delta so the error frame carries
         // the actual accumulated content (otherwise the user sees content
@@ -7453,7 +7481,7 @@ class ChatViewModel(
 
             val baseSystemPrompt = buildSystemPrompt()
             val systemPrompt = if ((provider as? com.openminis.app.provider.anthropic.AnthropicProvider)?.isOAuth == true) {
-                val prefix = com.openminis.app.auth.ClaudeOAuthManager.ANTHROPIC_OAUTH_IDENTIFIER_PROMPT
+                val prefix = io.github.nanomuse.cloud.ClaudeSignIn.identifier // nanoMuse: empty on a build without it, never throws; the provider refuses the send (#373)
                 if (baseSystemPrompt?.startsWith(prefix) == true) baseSystemPrompt
                 else "$prefix\n\n${baseSystemPrompt ?: ""}"
             } else baseSystemPrompt
@@ -12048,7 +12076,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
 
             val baseSystemPrompt = buildSystemPrompt()
             val systemPrompt = if ((provider as? com.openminis.app.provider.anthropic.AnthropicProvider)?.isOAuth == true) {
-                val prefix = com.openminis.app.auth.ClaudeOAuthManager.ANTHROPIC_OAUTH_IDENTIFIER_PROMPT
+                val prefix = io.github.nanomuse.cloud.ClaudeSignIn.identifier // nanoMuse: empty on a build without it, never throws; the provider refuses the send (#373)
                 if (baseSystemPrompt?.startsWith(prefix) == true) baseSystemPrompt
                 else "$prefix\n\n${baseSystemPrompt ?: ""}"
             } else baseSystemPrompt
@@ -12136,7 +12164,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
      */
     private fun handleUserCancelledCleanup() {
         val msgs = _messages.value.toMutableList()
-        val lastIdx = msgs.indexOfLast { it.role == "assistant" }
+        val lastIdx = io.github.nanomuse.chat.InterruptedReply.lastRealAssistantIndex(msgs) // nanoMuse: never the on-screen-only intro (#340)
         if (lastIdx < 0) return
         var last = msgs[lastIdx]
 
@@ -12236,7 +12264,9 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
             )
             viewModelScope.launch(Dispatchers.IO) {
                 val partsJson = buildAssistantPartsJson(parts)
-                chatRepository.appendMessage(activeSessionId, "assistant", partsJson)
+                // nanoMuse: a session id the database does not know yet (Stop inside the session insert) must not take the process down (#340)
+                runCatching { chatRepository.appendMessage(activeSessionId, "assistant", partsJson) }
+                    .onFailure { AppLogger.warning(TAG_STREAM, "cancel: interrupted reply not persisted: ${it.message}") }
             }
             // [T-android-group-pause-badge-restamp] A LIVE interruption just
             // happened: this is a real entry into the paused state, so the
@@ -12336,7 +12366,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
             val baseSystemPrompt = buildSystemPrompt()
             val systemPrompt =
                 if ((provider as? com.openminis.app.provider.anthropic.AnthropicProvider)?.isOAuth == true) {
-                    val prefix = com.openminis.app.auth.ClaudeOAuthManager.ANTHROPIC_OAUTH_IDENTIFIER_PROMPT
+                    val prefix = io.github.nanomuse.cloud.ClaudeSignIn.identifier // nanoMuse: empty on a build without it, never throws; the provider refuses the send (#373)
                     if (baseSystemPrompt?.startsWith(prefix) == true) baseSystemPrompt
                     else "$prefix\n\n${baseSystemPrompt ?: ""}"
                 } else baseSystemPrompt

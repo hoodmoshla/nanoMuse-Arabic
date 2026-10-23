@@ -122,8 +122,8 @@ apk="$NM_GRADLE_DIR/app/build/outputs/apk/release/app-release.apk"
 
 # ---- the signature -----------------------------------------------------------
 build_tools="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
-certs="$("$build_tools/apksigner" verify --print-certs "$apk")"
-echo "$certs" | grep -E "Signer #1 certificate (DN|SHA-256)" || true
+certs="$("$build_tools/apksigner" verify --print-certs "$apk" 2>&1)"
+echo "$certs" | grep -iE "certificate (DN|SHA-256 digest)" || true
 if echo "$certs" | grep -q "CN=Android Debug" && [ "$allow_debug" = 0 ]; then
   echo "signed with the debug key — android/keystore-arabic.properties is missing or unreadable" >&2
   exit 1
@@ -162,23 +162,61 @@ echo "== label: $label"
 }
 grep -E '^(sdkVersion|targetSdkVersion|native-code)' <<<"$badging" | sed 's/^/     /' || true
 
-entries="$(unzip -l "$apk" | awk 'NF >= 4 { print $4 }')"
+# Read exact ZIP entry paths from the central directory.
+entries="$(unzip -Z1 "$apk")"
 missing=""
 for entry in \
   lib/arm64-v8a/libproot-loader.so \
   lib/arm64-v8a/libproot-loader32.so \
   lib/arm64-v8a/libpty_bridge.so \
   lib/arm64-v8a/libjieba_jni.so \
-  assets/proot-aarch64 \
-  assets/alpine-minirootfs.tar.gz
+  assets/proot-aarch64
 do
   grep -Fxq "$entry" <<<"$entries" || missing="$missing $entry"
 done
+# The Alpine asset is the one entry whose *contents* have to be right, not only its name. aapt2
+# unpacks a `.gz` asset on the way into the APK — upstream's own RootfsManager says so and opens
+# whichever of the two names it finds — so which name and which contents survive depends on the
+# build tools. A `.tar.gz` holding a plain tar, or a `.tar` holding a gzip, would install and then
+# fail on the first shell command. The bytes are read, not the name.
+alpine=""
+for candidate in assets/alpine-minirootfs.tar.gz assets/alpine-minirootfs.tar; do
+  if grep -Fxq "$candidate" <<<"$entries"; then
+    alpine="$candidate"
+    break
+  fi
+done
+if [ -z "$alpine" ]; then
+  missing="$missing assets/alpine-minirootfs.tar.gz (or assets/alpine-minirootfs.tar)"
+fi
 if [ -n "$missing" ]; then
   echo "the release APK is missing:$missing" >&2
+  echo "APK assets:" >&2
+  unzip -Z1 "$apk" | grep '^assets/' | head -200 >&2 || true
+  echo "Merged asset files:" >&2
+  find "$NM_GRADLE_DIR/app/build/intermediates/merged_assets" -type f \
+    \( -name 'alpine-minirootfs.tar.gz' -o -name 'alpine-minirootfs.tar' -o -name 'proot-aarch64' \) \
+    -printf '%p (%s bytes)\n' 2>/dev/null >&2 || true
   echo "the sandbox cannot start without those, and the app would install and then fail." >&2
   exit 1
 fi
+
+head_bytes="$(mktemp)"
+unzip -p "$apk" "$alpine" 2>/dev/null | head -c 512 >"$head_bytes" || true
+magic="$(head -c 2 "$head_bytes" | od -An -tx1 | tr -d ' \n')"
+ustar="$(dd if="$head_bytes" bs=1 skip=257 count=5 2>/dev/null || true)"
+rm -f "$head_bytes"
+case "$magic:$ustar" in
+  1f8b:*) echo "== $alpine: a gzip" ;;
+  *:ustar) echo "== $alpine: a tar (the gzip was unpacked on the way in; the app reads either)" ;;
+  *)
+    echo "the Alpine asset in the APK is neither a gzip nor a tar:" >&2
+    echo "  entry: $alpine" >&2
+    echo "  first two bytes: '$magic' (a gzip starts 1f8b)" >&2
+    echo "  tar ustar field at offset 257: '$ustar'" >&2
+    exit 1
+    ;;
+esac
 libs="$(grep -c '^lib/arm64-v8a/.*\.so$' <<<"$entries" || true)"
 if [ "${libs:-0}" -lt 6 ]; then
   echo "only ${libs:-0} native libraries are packaged; the sandbox and the JNI code need at least" >&2
@@ -188,8 +226,13 @@ fi
 echo "== $libs native libraries, $(grep -c '^assets/' <<<"$entries" || true) assets"
 grep '^lib/arm64-v8a/.*\.so$' <<<"$entries" | sed 's/^/     /'
 
-fingerprint="$(sed -nE 's/.*Signer #1 certificate SHA-256 digest: ([0-9a-fA-F]+).*/\1/p' <<<"$certs" | head -1 | tr 'A-F' 'a-f')"
-[ -n "$fingerprint" ] || { echo "could not read the signing certificate" >&2; exit 1; }
+fingerprint="$(printf '%s\n' "$certs" | bash "$NM_ROOT/scripts/apksigner-fingerprint.sh" || true)"
+if [ -z "$fingerprint" ]; then
+  echo "could not read the signing certificate; apksigner output follows:" >&2
+  printf '%s\n' "$certs" >&2
+  exit 1
+fi
+echo "== signer certificate SHA-256: $fingerprint"
 
 # The permanent key, pinned on purpose. Public information (it is in every APK), so it lives in
 # the repository; $ARABIC_CERT_SHA256 overrides it for a machine that keeps it elsewhere. The
@@ -234,6 +277,9 @@ cp "$apk" "$out"
 ( cd "$NM_ROOT/dist" && sha256sum "$(basename "$out")" > "$(basename "$out").sha256" && cat "$(basename "$out").sha256" )
 ls -la "$out"
 
+publish_flag=false
+if [ "$publish" = 1 ]; then publish_flag=true; fi
+
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
   {
     echo "version=$version_name"
@@ -242,11 +288,15 @@ if [ -n "${GITHUB_OUTPUT:-}" ]; then
     echo "apk=$out"
     echo "sha256=$out.sha256"
     echo "cert=$fingerprint"
+    echo "publish=$publish_flag"
   } >>"$GITHUB_OUTPUT"
 fi
 
 # ---- the release -------------------------------------------------------------
-if [ "$publish" = 1 ] && [ -n "${GITHUB_OUTPUT:-}" ]; then
+# Note the condition: whether to publish is `--publish`, not whether a runner happens to be there.
+# Tying it to $GITHUB_OUTPUT as well meant a `--publish` run outside Actions built, signed and
+# then kept quiet about not releasing anything.
+if [ "$publish" = 1 ]; then
   echo "== publishing $tag"
   if [ -z "$notes" ]; then
     notes="$RUNNER_TEMP/arabic-notes.md"
@@ -264,10 +314,17 @@ to nanoMuse and neither app touches the other's data.
 EOF
   fi
   [ -f "$notes" ] || { echo "release notes not found: $notes" >&2; exit 1; }
-  git tag -a "$tag" -m "nanoMuse-Arabic $version_name"
+  # A runner has no git identity and `git tag -a` needs one — the annotated tag carries a tagger.
+  # Without this the release builds, signs, verifies the pinned certificate and dies on the tag
+  # with "Committer identity unknown", which is where the first run that reached this line stopped.
+  git -c user.name="nanoMuse-Arabic" -c user.email="noreply@github.com" \
+    tag -a "$tag" -m "nanoMuse-Arabic $version_name"
   git push origin "$tag"
   gh release create "$tag" --latest --title "nanoMuse-Arabic $version_name" \
     --notes-file "$notes" "$out" "$out.sha256"
+else
+  echo "== built and verified only: no --publish, so no tag and no release"
+  echo "   the signed APK is at $out"
 fi
 
 echo "== done: $version_name ($tag)"

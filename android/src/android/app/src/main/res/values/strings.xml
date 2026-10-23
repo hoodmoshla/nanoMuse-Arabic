@@ -59,6 +59,8 @@
     <string name="check_update_install_launch_failed">Failed to launch installer. Check \"install unknown apps\" permission or open the downloaded APK manually.</string>
     <string name="check_update_install_hint">Tip: If installation gives no feedback, the signature may not match — uninstall the previous version first, then download again.</string>
     <string name="check_update_open_install_settings">Open Settings</string>
+    <string name="check_update_digest_mismatch">The downloaded file does not match the published SHA-256, so it was not installed.</string>
+    <string name="check_update_view_release">View update</string>
 
     <!-- Permissions (Settings → Permissions) -->
     <string name="permissions_title">Permissions</string>

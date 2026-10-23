@@ -17,13 +17,14 @@ Android app is the reference; the others follow its shape, not its pixels:
 |---|---|---|
 | A face with a name pill and a status line at the top of the conversation | `HomeShell`, `AgentAvatarDisc` | the web app's chat header, dragon by default |
 | One main chat, side chats in a drawer | drawer | drawer on narrow windows, a sidebar on wide ones |
-| Feed · Ideas · Goals · Library | bottom bar | bottom bar / sidebar |
+| Feed · Ideas · Goals · Library | floating frosted-glass pill bar, icons only | the same pill at phone width (web and iOS alike), a sidebar on a wide window and in the desktop app |
 | Approval cards in the chat, three tiers, *remember* pills | `RiskApprovalCard`, `RiskTier` | the Sentinel's card with the same labels |
 | Settings → Permissions: what was remembered, by tier | `GrantsSection` | Permissions page, grants by tier |
 | Settings → Hands: the screen as a hand, off by default | `Hands` | Settings → Hands (this computer's screen) |
 | Devices: the account's other devices, online dots, *Remote control*, rename, forget, *ask this device* | `DevicesSection`, `ComputersScreen` | Devices page |
 | The stage while the hands work: a ring where the next tap lands, a capsule with the step and **Stop** | `HandsStage`, capsule | a live *Hands* card in the chat; the window adds an overlay |
 | First run: what it is, sign in with a phone number or an e-mail (free) or your own key, the Hands permissions, meet | `FirstRunSetup` | the same four pages |
+| A clip of your own as the face: MP4 or MOV, up to 15 seconds and 30 MB, H.264 video on every device and HEVC where the device can play it (tried, not assumed); nothing is transcoded, a refusal states the limits, the clip stays on that device | `OwnClip.kt` (H.264 only today) | `own-clip.ts` and the preview: an HEVC clip the computer cannot decode is refused there |
 
 ## Two roles
 
@@ -114,7 +115,14 @@ here under the same conversation; nothing in the chat list says where a chat
 was written, the bubbles do. The person's message is on the other devices as
 soon as it is sent, the reply when the turn ends; signing in sends the device's
 whole history, oldest first. Rename the muse anywhere (the first
-conversation's naming included) and the name follows on the next pull.
+conversation's naming included) and the name follows on the next pull. The
+phones pull the account's name and face when the app starts, right after a
+sign-in, when the hub says `profile`, and each time the app comes back to the
+front (a `profile` frame sent while the app was in the background is missed,
+so the return to the front stands in for it). A rename, or a connector
+change, on a phone that wears no face of its own says nothing about the look:
+the relay keeps the face the account has, and only a reset in the avatar
+studio takes it off every device.
 
 Since 0.1.38 it is **main first**. Only the main conversation travels unless a
 device asks for more: side chats stay on the device that made them, and no other

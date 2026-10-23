@@ -102,6 +102,7 @@ class Resource:
     tag: str
     values: list[str]
     quantities: list[str]
+    translatable: bool = True
 
     @property
     def placeholders(self) -> set[str]:
@@ -144,7 +145,12 @@ def parse_resources(path: Path) -> tuple[dict[str, Resource] | None, list[str]]:
         if name in resources:
             errors.append(f"duplicate resource {name!r}")
         if child.tag == "string":
-            resources[name] = Resource(child.tag, [child.text or ""], [])
+            resources[name] = Resource(
+                child.tag,
+                [child.text or ""],
+                [],
+                child.get("translatable", "true") != "false",
+            )
             continue
         values = [item.text or "" for item in child]
         quantities = [item.get("quantity") or "" for item in child]
@@ -166,10 +172,21 @@ def parse_resources(path: Path) -> tuple[dict[str, Resource] | None, list[str]]:
 
 
 def check_keys(reference: dict[str, Resource], target: dict[str, Resource], label: str) -> None:
-    missing = sorted(set(reference) - set(target))
+    # Upstream marks some strings `translatable="false"`. NmStringsParityTest then fails if a
+    # locale copies them, so Arabic must not carry them either.
+    required = {name for name, res in reference.items() if res.translatable}
+    missing = sorted(required - set(target))
+    forbidden = sorted(
+        name for name, res in reference.items() if not res.translatable and name in target
+    )
     extra = sorted(set(target) - set(reference))
     if missing:
         fail(label, f"{len(missing)} key(s) English has and Arabic does not: {missing[:12]}")
+    if forbidden:
+        fail(
+            label,
+            f"{len(forbidden)} key(s) English marks translatable=false but Arabic copies: {forbidden[:12]}",
+        )
     if extra:
         fail(label, f"{len(extra)} key(s) Arabic has and English does not: {extra[:12]}")
 

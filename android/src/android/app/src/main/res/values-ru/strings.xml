@@ -55,6 +55,8 @@
     <string name="check_update_install_launch_failed">Не удалось запустить установщик. Проверьте разрешение «установка неизвестных приложений» или откройте скачанный APK вручную.</string>
     <string name="check_update_install_hint">Совет: если установка не даёт отклика, подпись может не совпадать — сначала удалите предыдущую версию, затем скачайте снова.</string>
     <string name="check_update_open_install_settings">Открыть настройки</string>
+    <string name="check_update_digest_mismatch">Загруженный файл не совпадает с опубликованным SHA-256, поэтому он не установлен.</string>
+    <string name="check_update_view_release">Открыть обновление</string>
     <string name="permissions_title">Разрешения</string>
     <string name="permissions_reset_all">Сбросить все</string>
     <string name="permissions_reset_dialog_title">Сбросить все разрешения?</string>

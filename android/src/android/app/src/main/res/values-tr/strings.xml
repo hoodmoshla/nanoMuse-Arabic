@@ -55,6 +55,8 @@
     <string name="check_update_install_launch_failed">Yükleyici açılamadı. \"Bilinmeyen uygulamaları yükle\" iznini denetleyin ya da indirilen APK dosyasını elle açın.</string>
     <string name="check_update_install_hint">İpucu: Kurulum hiçbir geri bildirim vermiyorsa imza uyuşmuyor olabilir — önce eski sürümü kaldırın, sonra yeniden indirin.</string>
     <string name="check_update_open_install_settings">Ayarları Aç</string>
+    <string name="check_update_digest_mismatch">İndirilen dosya yayımlanan SHA-256 ile eşleşmediği için yüklenmedi.</string>
+    <string name="check_update_view_release">Güncellemeyi gör</string>
     <string name="permissions_title">İzinler</string>
     <string name="permissions_reset_all">Tümünü Sıfırla</string>
     <string name="permissions_reset_dialog_title">Tüm izinler sıfırlansın mı?</string>

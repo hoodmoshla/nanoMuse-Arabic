@@ -41,7 +41,7 @@ function Loading() {
   );
 }
 
-/** The five glyphs: outlined at rest, filled with the page's ink when selected — the fill is the state. */
+/** The five glyphs: outlined at rest, filled with the button's own ink when selected. The fill is the state. */
 const glyph = (active: boolean) => ({ size: 26, strokeWidth: active ? 2 : 1.7, fill: active ? "currentColor" : "none", fillOpacity: active ? 0.18 : 0 });
 const TABS: Array<{ id: Tab; label: string; icon: (active: boolean) => ReactNode }> = [
   { id: "chat", label: "Chat", icon: (a) => <MessageCircle {...glyph(a)} /> },
@@ -129,7 +129,7 @@ export default function App() {
           <Sidebar />
         </div>
       )}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         {state.gone && (
           <div className="flex items-center justify-center gap-2 bg-surface-2 text-muted text-[12.5px] py-1">
             <WifiOff size={14} /> {t(state.lite ? "This demo has ended." : "This nanoMuse has stopped. Reload the page once it is running again.")}
@@ -141,7 +141,9 @@ export default function App() {
           </div>
         )}
         {!state.lite && <DesktopRemoteHint />}
-        <main className="mx-auto min-h-0 w-full flex-1 wide:max-w-[900px]">
+        {/* `tabbar-room` keeps the screens, the chat's composer included, above the floating bar;
+            a wide window has the sidebar instead and gives the room back. */}
+        <main className={cx("tabbar-room mx-auto min-h-0 w-full flex-1 wide:max-w-[900px]", !state.lite && "wide:pb-0")}>
           <Suspense fallback={<Loading />}>
             {state.tab === "chat" && <ChatScreen />}
             {state.tab === "feed" && <FeedScreen />}
@@ -159,29 +161,38 @@ export default function App() {
             {state.tab === "avatar" && <AvatarStudioScreen />}
           </Suspense>
         </main>
-        {/* Muse's bottom bar, as the Android app draws it: a plain strip, five glyphs, the current one
-            filled and dark, the others outlined and softer — no labels, no pill. In lite (the phone in
-            the showcase) it shows whatever the width; otherwise a wide window has the sidebar instead. */}
-        <nav className={cx("safe-bottom shrink-0 bg-bg", !state.lite && "wide:hidden")}>
-          <ul className="flex h-14 items-center justify-evenly">
+        {/* Muse's bottom bar, as the Android app draws it: a floating frosted-glass pill, five glyphs,
+            icons only. The pill sits 12px above the bottom edge, blurs what is behind it and carries
+            a hairline edge; the current tab shows its filled glyph on an ink indicator (black in the
+            light theme, white in the dark one, the glyph in the opposite colour), the others stay
+            outlined in the muted grey. No labels: the fill and the indicator are the
+            state. The pill is as wide as the chat's composer above it (the same 12px from the sides,
+            `px-3` on the Composer's form), 420px at most and centred on a wider screen; the five
+            slots share it equally and the indicator disc keeps its 60 by 46 inside the slot. In lite
+            (the phone in the showcase) it shows whatever the width; otherwise a wide window has the
+            sidebar instead. The nav itself lets taps through to the screen; only the pill takes them. */}
+        <nav className={cx("tabbar-float pointer-events-none absolute inset-x-0 z-20 flex justify-center px-3", !state.lite && "wide:hidden")}>
+          <ul className="pointer-events-auto flex w-full max-w-[420px] items-center gap-0.5 rounded-full bg-surface-2/55 px-3.5 py-1.5 ring-1 ring-border/50 backdrop-blur-2xl">
             {TABS.map((tab) => {
               const active = state.tab === tab.id;
               const badge = tab.id === "chat" ? pendingApprovals : tab.id === "feed" ? feedUnseen : tab.id === "goals" ? proposals : 0;
               return (
-                <li key={tab.id}>
+                <li key={tab.id} className="min-w-0 flex-1">
                   <button
                     type="button"
                     onClick={() => setTab(tab.id)}
                     aria-label={t(tab.label)}
                     aria-current={active ? "page" : undefined}
-                    className={cx("relative flex h-12 w-12 items-center justify-center rounded-full transition", active ? "text-fg" : "text-fg/70 hover:text-fg")}
+                    className={cx("flex h-[46px] w-full items-center justify-center", active ? "text-ink-fg" : "text-muted hover:text-fg")}
                   >
-                    {tab.icon(active)}
-                    {badge > 0 && (
-                      <span className="absolute right-1 top-1 flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
-                        {badge}
-                      </span>
-                    )}
+                    <span className={cx("relative flex h-[46px] w-full max-w-[60px] items-center justify-center rounded-full transition-colors duration-300", active && "bg-ink")}>
+                      {tab.icon(active)}
+                      {badge > 0 && (
+                        <span className="absolute right-2.5 top-1 flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
+                          {badge}
+                        </span>
+                      )}
+                    </span>
                   </button>
                 </li>
               );
@@ -193,8 +204,8 @@ export default function App() {
       <FileViewer path={state.viewer} onClose={() => openFile(null)} />
       {firstSteps}
       {state.toast && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-24 z-[70] flex justify-center px-4">
-          <div className="rise rounded-2xl bg-fg text-bg px-4 py-2 text-[13.5px] shadow-lg max-w-sm text-center">{state.toast}</div>
+        <div className="pointer-events-none fixed inset-x-0 bottom-[calc(6rem+env(safe-area-inset-bottom))] z-[70] flex justify-center px-4">
+          <div role="status" className="rise rounded-2xl bg-fg text-bg px-4 py-2 text-[13.5px] shadow-lg max-w-sm text-center">{state.toast}</div>
         </div>
       )}
     </div>

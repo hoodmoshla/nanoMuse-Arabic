@@ -55,6 +55,8 @@
     <string name="check_update_install_launch_failed">Nabigong buksan ang installer. Suriin ang pahintulot na \"mag-install ng hindi kilalang app\" o buksan nang manu-mano ang na-download na APK.</string>
     <string name="check_update_install_hint">Tip: Kung walang tugon ang pag-install, maaaring hindi tugma ang signature — i-uninstall muna ang naunang bersyon, pagkatapos ay i-download muli.</string>
     <string name="check_update_open_install_settings">Buksan ang Mga Setting</string>
+    <string name="check_update_digest_mismatch">Hindi tugma ang na-download na file sa nai-publish na SHA-256, kaya hindi ito na-install.</string>
+    <string name="check_update_view_release">Tingnan ang update</string>
     <string name="permissions_title">Mga Pahintulot</string>
     <string name="permissions_reset_all">I-reset Lahat</string>
     <string name="permissions_reset_dialog_title">I-reset ang Lahat ng Pahintulot?</string>

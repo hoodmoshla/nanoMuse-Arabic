@@ -47,7 +47,12 @@ data class Guidance(
 
         fun parse(o: JSONObject?): Guidance? {
             o ?: return null
-            val providers = providers(o.optJSONArray("providers"))
+            // `session_providers`: vendors that want a session id per conversation (OpenCode Go),
+            // which the relay lists apart for the apps of before this one; this app sends the id
+            // (io.github.nanomuse.net.OpenCodeSession), so they follow the relay's own list
+            val providers = providers(o.optJSONArray("providers")).let { main ->
+                if (main.isEmpty()) main else main + providers(o.optJSONArray("session_providers")).filter { s -> main.none { it.id == s.id } }
+            }
             if (providers.isEmpty()) return null
             val plans = (0 until (o.optJSONArray("plans")?.length() ?: 0)).mapNotNull { i ->
                 val p = o.optJSONArray("plans")?.optJSONObject(i) ?: return@mapNotNull null
@@ -104,6 +109,7 @@ data class Guidance(
                 note = p.optString("note"),
                 noteZh = p.optString("note_zh"),
                 verified = p.optString("verified"),
+                sessionHeader = p.optString("session_header").takeIf { it.isNotBlank() },
             )
         }
 
@@ -139,14 +145,17 @@ data class Ways(
          * client, its local servers — and the catalogue only when the relay sent none. A plan
          * whose provider the bundled catalogue knows opens that vendor's form; one it does
          * not is still listed with the relay's provider entry, so a new vendor on the relay
-         * shows before the app is updated.
+         * shows before the app is updated. The Claude sign-in is listed only when this build
+         * can run it ([claudeSignIn], false on the public build, #373).
          */
-        fun resolve(guidance: Guidance?, catalogue: List<CatalogueProvider>, mainland: Boolean, chinese: Boolean = false): Ways {
+        fun resolve(guidance: Guidance?, catalogue: List<CatalogueProvider>, mainland: Boolean, chinese: Boolean = false, claudeSignIn: Boolean = true): Ways {
             if (guidance == null) {
                 val vendors = ProviderCatalogue.ordered(catalogue, mainland)
                 return Ways(
                     vendors = vendors,
-                    signIns = ProviderCatalogue.signIns(catalogue, mainland).map { v -> SignIn(v, v.signIn!!, v.capabilitiesFor(v.signIn), planName(v.signIn!!, v, chinese)) },
+                    signIns = ProviderCatalogue.signIns(catalogue, mainland)
+                        .filter { claudeSignIn || it.signIn != ProviderCatalogue.AUTH_CLAUDE }
+                        .map { v -> SignIn(v, v.signIn!!, v.capabilitiesFor(v.signIn), planName(v.signIn!!, v, chinese)) },
                     locals = catalogue.filter { it.local },
                     docs = "",
                     chatgptCaveat = "",
@@ -156,6 +165,7 @@ data class Ways(
             val known = (guidance.providers + guidance.local + catalogue).associateBy { it.id }
             val signIns = guidance.plans
                 .filter { Guidance.CLIENT in it.clients || it.clients.isEmpty() }
+                .filter { claudeSignIn || it.auth != ProviderCatalogue.AUTH_CLAUDE }
                 .mapNotNull { plan ->
                     val vendor = catalogue.firstOrNull { it.id == plan.provider } ?: known[plan.provider] ?: return@mapNotNull null
                     SignIn(vendor, plan.auth, plan.covers.ifEmpty { vendor.capabilitiesFor(plan.auth) }, plan.name)

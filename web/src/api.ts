@@ -13,6 +13,7 @@ import type {
   CodingRun,
   CodingSession,
   ConnectionsData,
+  CustomEndpoint,
   Contact,
   FeedItem,
   FeedPostsData,
@@ -140,16 +141,27 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   }
   if (res.status === 401) throw new AuthError();
   if (!res.ok) {
-    let detail = res.statusText || `HTTP ${res.status}`;
+    let data: unknown;
     try {
-      const data = await res.json();
-      detail = data.detail ?? JSON.stringify(data);
+      data = await res.json();
     } catch {
-      /* ignore */
+      /* not JSON: the sentence below stands for it */
     }
-    throw new Error(detail);
+    throw new Error(failureDetail(res.status, data));
   }
   return (await res.json()) as T;
+}
+
+/**
+ * What a refused reply says to the person: the runtime's `detail` when it is a sentence (the
+ * screens translate the ones they know), otherwise one sentence for the status. A validation
+ * error's `detail` is a list and a crashed route sends no JSON; neither is shown as it came,
+ * and the status number never is.
+ */
+export function failureDetail(status: number, data: unknown): string {
+  const detail = data && typeof data === "object" ? (data as { detail?: unknown }).detail : undefined;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  return status >= 500 ? "Your nanoMuse hit a problem; try again in a moment." : "Your nanoMuse could not do that.";
 }
 
 const json = (body: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(body) });
@@ -305,7 +317,7 @@ export const api = {
     if (token) headers["Authorization"] = `Bearer ${token}`;
     const res = await fetch(`/api/files/${path.split("/").map(encodeURIComponent).join("/")}`, { headers });
     if (res.status === 401) throw new AuthError();
-    if (!res.ok) throw new Error(res.statusText || `HTTP ${res.status}`);
+    if (!res.ok) throw new Error(failureDetail(res.status, await res.json().catch(() => undefined)));
     return res.text();
   },
   settings: () => request<SettingsView>("/api/settings"),
@@ -334,8 +346,9 @@ export const api = {
   setLLM: (body: Record<string, unknown>) =>
     request<ConnectionsData["llm"]>("/api/connections/llm", { method: "PUT", body: JSON.stringify(body) }),
   testLLM: () => request<TestResult>("/api/connections/llm/test", { method: "POST" }),
-  /** the models an endpoint offers: its own /models when it answers, else the preset's catalogue */
-  llmModels: (body: { preset?: string; base_url?: string; api_key?: string }) =>
+  /** the models an endpoint offers: its own /models when it answers, else the preset's catalogue
+   *  (or, for a custom endpoint of the list named by `endpoint`, the models saved with it) */
+  llmModels: (body: { preset?: string; base_url?: string; api_key?: string; endpoint?: string }) =>
     request<{
       models: string[];
       image_models?: string[];
@@ -356,6 +369,21 @@ export const api = {
     }>(
       "/api/llm/models",
       json(body),
+    ),
+  /** a custom OpenAI-compatible endpoint joins the runtime's list (#294); `models` typed when it does not list them */
+  addEndpoint: (body: { label?: string; base_url: string; api_key?: string; models?: string }) =>
+    request<CustomEndpoint>("/api/connections/endpoints", json(body)),
+  /** a new name, address, key or typed models; the slots that use the endpoint follow */
+  updateEndpoint: (id: string, body: { label?: string; base_url?: string; api_key?: string; models?: string }) =>
+    request<CustomEndpoint>(`/api/connections/endpoints/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(body) }),
+  /** 409 while the chat model answers through it */
+  removeEndpoint: (id: string) =>
+    request<{ ok: boolean }>(`/api/connections/endpoints/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  /** asks the endpoint for its models again; `kept` when it did not answer and the saved list stands */
+  refreshEndpointModels: (id: string) =>
+    request<CustomEndpoint & { source: "live" | "kept"; error?: string }>(
+      `/api/connections/endpoints/${encodeURIComponent(id)}/models`,
+      json({}),
     ),
   setEmbeddings: (body: Record<string, unknown>) =>
     request<ConnectionsData["embeddings"]>("/api/connections/embeddings", { method: "PUT", body: JSON.stringify(body) }),

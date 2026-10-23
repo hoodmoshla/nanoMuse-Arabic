@@ -8,19 +8,22 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Singleton that tracks two independent kinds of "session is alive":
+ * Singleton that tracks what the agent has to do — and, through [reconcileService], the only thing
+ * that starts or stops the foreground service.
  *
  *  - `activeSessions`: at least one [com.openminis.app.ui.chat.ChatViewModel.streamJob]
  *    is in flight (LLM call, tool execution).
- *  - `presentSessions` (T166): the user is sitting on a chat screen
- *    with the composer mounted, regardless of whether a stream is
- *    running. Drives the FG service so backgrounding the chat for a
- *    minute doesn't drop the process to adj=700 and get it reclaimed.
+ *  - `pendingTasks`: work accepted but not started yet — a scheduled task, a turn queued behind
+ *    another. See [setPending].
+ *  - `presentSessions` (T166): the user is sitting on a chat screen. read by the notification
+ *    copy only. It used to be a reason to run the service, and that is the bug
+ *    [io.github.nanomuse.service.ForegroundServicePolicy] exists to end: pressing Home from a chat
+ *    left the marker set, so the service and its permanent notification outlived every task.
  *
- * The foreground service runs whenever EITHER set is non-empty, so
- * the user holds a stable adj=200 across reading, composing, and
- * streaming alike. It stops only when both are empty (user has
- * navigated back to Sessions list AND no stream is in flight).
+ * The service runs while [io.github.nanomuse.service.ForegroundServicePolicy.shouldRun] says so —
+ * work in flight or work queued, and nothing else. Every event that could change that answer goes
+ * through [reconcileService]: a task starting or settling, the UI going away or coming back, or
+ * the notification's Stop.
  */
 object SessionActivityTracker {
 
@@ -41,6 +44,17 @@ object SessionActivityTracker {
      */
     private val _presentSessions = MutableStateFlow<Set<String>>(emptySet())
     val presentSessions: StateFlow<Set<String>> = _presentSessions.asStateFlow()
+
+    /**
+     * Work the agent has accepted but not started — a scheduled task resolving its session, a turn
+     * queued behind another. Counted by the policy because the gap between "this will run" and
+     * "this is running" is exactly when the process must not be reclaimed.
+     */
+    private val _pendingTasks = MutableStateFlow<Set<String>>(emptySet())
+    val pendingTasks: StateFlow<Set<String>> = _pendingTasks.asStateFlow()
+
+    /** The line a pending task asked to show while it waits (a scheduled task names itself). */
+    private val pendingStatus = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     private val _currentToolStatus = MutableStateFlow("Idle")
     val currentToolStatus: StateFlow<String> = _currentToolStatus.asStateFlow()
@@ -198,7 +212,10 @@ object SessionActivityTracker {
      * state flows rather than tracking a derived flag.
      */
     private fun shouldRunService(): Boolean =
-        _activeSessions.value.isNotEmpty() || _presentSessions.value.isNotEmpty()
+        io.github.nanomuse.service.ForegroundServicePolicy.shouldRun(
+            activeTasks = _activeSessions.value.size,
+            pendingTasks = _pendingTasks.value.size,
+        )
 
     /**
      * T50: per-session stream-cancel callbacks. Each ChatViewModel
@@ -296,7 +313,6 @@ object SessionActivityTracker {
      * action can fan out to every running session.
      */
     fun setActive(sessionId: String, onStop: (() -> Unit)? = null) {
-        val wasIdle = !shouldRunService()
         // [T-android-live-update-completed] Capture BEFORE mutating: a run
         // "begins" only on the empty → non-empty edge. A second concurrent
         // session joining an in-flight run must not restart the clock.
@@ -324,17 +340,49 @@ object SessionActivityTracker {
         }
         Log.d(TAG, "Session activated: $sessionId (total: ${_activeSessions.value.size})")
 
-        if (wasIdle) {
-            startServiceIfNeeded()
-        } else {
-            updateService()
-        }
+        reconcileService()
     }
 
     /**
-     * Marks a session as inactive. Stops the foreground service if no
-     * sessions remain active *and* the user is no longer present in any
-     * chat.
+     * Work accepted but not started: a scheduled task, a turn queued behind another. It keeps the
+     * service alive, so the window between "this will run" and "this is running" cannot be
+     * reclaimed, and it is dropped in a `finally` by whoever queued it.
+     */
+    fun setPending(id: String, pending: Boolean, status: String? = null) {
+        val already = id in _pendingTasks.value
+        if (pending == already) {
+            if (status != null && pending) pendingStatus[id] = status
+            reconcileService()
+            return
+        }
+        if (pending) {
+            if (status != null) pendingStatus[id] = status
+            _pendingTasks.value = _pendingTasks.value + id
+            Log.d(TAG, "Pending task added: $id (pending: ${_pendingTasks.value.size})")
+        } else {
+            _pendingTasks.value = _pendingTasks.value - id
+            pendingStatus.remove(id)
+            Log.d(TAG, "Pending task done: $id (pending: ${_pendingTasks.value.size})")
+        }
+        reconcileService()
+    }
+
+    /**
+     * The UI went away — Home, the app switcher, the screen locking, another app on top. Not a
+     * reason to stop, and not a reason to keep going: a reason to ask the question again. With
+     * nothing running and nothing queued, the service and its notification go now.
+     */
+    fun onUiHidden() = reconcileService()
+
+    /**
+     * The UI came back. Nothing is started by this: a visible app is already in the foreground,
+     * and a service with no work behind it is the thing this policy exists to prevent.
+     */
+    fun onUiShown() = reconcileService()
+
+    /**
+     * Marks a session as inactive. Stops the foreground service when no
+     * work remains — see [io.github.nanomuse.service.ForegroundServicePolicy].
      */
     fun setInactive(sessionId: String) {
         val wasActive = sessionId in _activeSessions.value
@@ -371,11 +419,7 @@ object SessionActivityTracker {
                 _lastToolOutcome.value = ToolOutcome.Error
             }
         }
-        if (!shouldRunService()) {
-            stopService()
-        } else {
-            updateService()
-        }
+        reconcileService()
         // T180-bg-notif: fire the completion listener AFTER service state
         // is settled so the notifier sees a stable activeSessions count.
         // Skip if the session was never marked active (defensive — keeps
@@ -404,14 +448,9 @@ object SessionActivityTracker {
      */
     fun setPresent(sessionId: String) {
         if (sessionId in _presentSessions.value) return
-        val wasIdle = !shouldRunService()
         _presentSessions.value = _presentSessions.value + sessionId
         Log.d(TAG, "Presence set: $sessionId (present total: ${_presentSessions.value.size})")
-        if (wasIdle) {
-            startServiceIfNeeded()
-        } else {
-            updateService()
-        }
+        reconcileService()
     }
 
     /**
@@ -424,11 +463,7 @@ object SessionActivityTracker {
         if (sessionId !in _presentSessions.value) return
         _presentSessions.value = _presentSessions.value - sessionId
         Log.d(TAG, "Presence cleared: $sessionId (present total: ${_presentSessions.value.size})")
-        if (!shouldRunService()) {
-            stopService()
-        } else {
-            updateService()
-        }
+        reconcileService()
     }
 
     /**
@@ -442,11 +477,7 @@ object SessionActivityTracker {
         if (_presentSessions.value.isEmpty()) return
         _presentSessions.value = emptySet()
         Log.d(TAG, "Presence cleared (all)")
-        if (!shouldRunService()) {
-            stopService()
-        } else {
-            updateService()
-        }
+        reconcileService()
     }
 
     /**
@@ -487,7 +518,7 @@ object SessionActivityTracker {
     fun updateToolStatus(status: String) {
         _currentToolStatus.value = status
         if (_activeSessions.value.isNotEmpty()) {
-            updateService()
+            reconcileService()
         }
     }
 
@@ -519,7 +550,7 @@ object SessionActivityTracker {
         // tool's "running" state.
         if (isRunning) _lastToolOutcome.value = ToolOutcome.Unknown
         if (_activeSessions.value.isNotEmpty()) {
-            updateService()
+            reconcileService()
         }
     }
 
@@ -544,24 +575,34 @@ object SessionActivityTracker {
         _isToolRunning.value = false
         _lastToolOutcome.value = outcome
         if (_activeSessions.value.isNotEmpty()) {
-            updateService()
+            reconcileService()
         }
     }
 
-    private fun startServiceIfNeeded() {
+    /**
+     * The single place the service is started, stopped or re-issued. Every event that could change
+     * the answer calls this and nothing else, so the rule lives in
+     * [io.github.nanomuse.service.ForegroundServicePolicy] instead of being spread over the call
+     * sites. Starting an already-running service is an update of its notification, never a second
+     * instance: Android keeps one instance of a Service per process.
+     */
+    private fun reconcileService() {
+        val active = _activeSessions.value.size
+        val pending = _pendingTasks.value.size
+        val run = io.github.nanomuse.service.ForegroundServicePolicy.shouldRun(active, pending)
+        Log.d(
+            TAG,
+            "reconcile: ${io.github.nanomuse.service.ForegroundServicePolicy.describe(active, pending)}" +
+                " → ${if (run) "run" else "stop"}",
+        )
+        if (!run) {
+            stopService()
+            return
+        }
         val context = appContext ?: run {
             Log.w(TAG, "Context not initialized, cannot start service")
             return
         }
-        AgentForegroundService.startService(
-            context,
-            sessionCountForNotification(),
-            statusForNotification(),
-        )
-    }
-
-    private fun updateService() {
-        val context = appContext ?: return
         AgentForegroundService.startService(
             context,
             sessionCountForNotification(),
@@ -578,6 +619,7 @@ object SessionActivityTracker {
      */
     private fun sessionCountForNotification(): Int =
         if (_activeSessions.value.isNotEmpty()) _activeSessions.value.size
+        else if (_pendingTasks.value.isNotEmpty()) _pendingTasks.value.size
         else _presentSessions.value.size
 
     /**
@@ -611,6 +653,9 @@ object SessionActivityTracker {
                     if (activeCount == 1) "1 task running" else "$activeCount tasks running"
                 }
             }
+            _pendingTasks.value.isNotEmpty() ->
+                pendingStatus.values.firstOrNull()
+                    ?: (ctx?.getString(com.openminis.app.R.string.notif_in_session) ?: "In session")
             _presentSessions.value.isNotEmpty() ->
                 ctx?.getString(com.openminis.app.R.string.notif_in_session) ?: "In session"
             else -> "Idle"

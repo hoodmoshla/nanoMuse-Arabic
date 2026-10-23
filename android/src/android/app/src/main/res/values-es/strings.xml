@@ -55,6 +55,8 @@
     <string name="check_update_install_launch_failed">No se pudo abrir el instalador. Revisa el permiso \"instalar apps desconocidas\" o abre el APK descargado manualmente.</string>
     <string name="check_update_install_hint">Sugerencia: si la instalación no da respuesta, puede que la firma no coincida. Desinstala primero la versión anterior y vuelve a descargar.</string>
     <string name="check_update_open_install_settings">Abrir ajustes</string>
+    <string name="check_update_digest_mismatch">El archivo descargado no coincide con el SHA-256 publicado, así que no se instaló.</string>
+    <string name="check_update_view_release">Ver actualización</string>
     <string name="permissions_title">Permisos</string>
     <string name="permissions_reset_all">Restablecer todo</string>
     <string name="permissions_reset_dialog_title">¿Restablecer todos los permisos?</string>

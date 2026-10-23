@@ -37,6 +37,8 @@ object UpdateCheck {
     private const val KEY_CHECKED_AT = "checked_at"
     private const val KEY_FAILED = "failed"
     private const val KEY_NO_RELEASE = "no_release"
+    private const val KEY_ACK_VERSION = "ack_version"
+    private const val KEY_ACK_AT = "ack_at"
 
     /** Where "Update" goes: this edition's releases, never upstream's download page. */
     const val DOWNLOAD_URL = "https://github.com/hoodmoshla/nanoMuse-Arabic/releases"
@@ -58,6 +60,13 @@ object UpdateCheck {
     ) {
         /** The latest is newer than this build. */
         val newer: Boolean get() = latest != null && isNewer(latest, BuildConfig.VERSION_NAME)
+
+        /**
+         * A newer release the person has not been told about in the last day. Settings can
+         * still show the version; this only decides the notice.
+         */
+        fun shouldNotify(acknowledgedVersion: String?, acknowledgedAt: Long, now: Long): Boolean =
+            UpdateNoticePolicy.shouldShow(latest, newer, acknowledgedVersion, acknowledgedAt, now)
     }
 
     /** What the feed had to say. The three answers are not the same answer. */
@@ -137,6 +146,17 @@ object UpdateCheck {
                 checking.set(false)
             }
         }
+    }
+
+    /** The person has seen the notice for this version; do not repeat it until the quiet period ends. */
+    fun acknowledge(context: Context, version: String, now: Long = System.currentTimeMillis()) {
+        prefs(context).edit().putString(KEY_ACK_VERSION, version).putLong(KEY_ACK_AT, now).apply()
+    }
+
+    /** Whether the launch notice should appear, given what was last acknowledged. */
+    fun shouldNotify(context: Context, state: State, now: Long = System.currentTimeMillis()): Boolean {
+        val p = prefs(context)
+        return state.shouldNotify(p.getString(KEY_ACK_VERSION, null), p.getLong(KEY_ACK_AT, 0L), now)
     }
 
     /**

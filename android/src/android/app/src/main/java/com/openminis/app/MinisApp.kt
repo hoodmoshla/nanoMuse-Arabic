@@ -659,6 +659,7 @@ class MinisApp : Application(), ImageLoaderFactory {
         // nanoMuse: remembered approvals + the approval gate's background notification.
         io.github.nanomuse.guard.Grants.init(this)
         io.github.nanomuse.feed.FeedFlow.init(this) // nanoMuse
+        io.github.nanomuse.chat.RoutineWakes.init(this) // nanoMuse: which chat rows a routine sent
         io.github.nanomuse.avatar.AvatarStore.init(this) // nanoMuse: the user's own face, if any
         io.github.nanomuse.cloud.ProfileSync.init(this) // nanoMuse: the name and face the account's devices share
         io.github.nanomuse.account.AccountData.init(this) // nanoMuse: whose chat is whose (contract C12)
@@ -680,6 +681,11 @@ class MinisApp : Application(), ImageLoaderFactory {
                 val wasBackgrounded = foregroundActivityCount == 0
                 foregroundActivityCount++
                 if (wasBackgrounded) _isAppForegroundFlow.value = true
+                if (wasBackgrounded) {
+                    // nanoMuse-Arabic: the UI is back. That starts nothing — a visible app needs no
+                    // service — but it is a moment to ask the question again.
+                    com.openminis.app.service.SessionActivityTracker.onUiShown()
+                }
                 // T298: as soon as the app transitions background → foreground,
                 // clear any task-completed notifications still in the tray.
                 // The user is back in front of the app — there's no point
@@ -728,6 +734,9 @@ class MinisApp : Application(), ImageLoaderFactory {
                 foregroundActivityCount = (foregroundActivityCount - 1).coerceAtLeast(0)
                 if (foregroundActivityCount == 0) {
                     _isAppForegroundFlow.value = false
+                    // nanoMuse-Arabic: the UI went away. Nothing is stopped merely for that; the
+                    // tracker stops the service only when no task is running or queued.
+                    com.openminis.app.service.SessionActivityTracker.onUiHidden()
                     // [T-android-config-confirm-timeout] The user switched away
                     // while a config-confirm dialog may still be showing — nudge
                     // them so they can come back before the 120s timeout.
