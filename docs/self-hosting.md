@@ -4,9 +4,9 @@ nanoMuse is one agent on your own devices, and nothing in it has to go through a
 
 | | What you run | What it gives you |
 |---|---|---|
-| [1. No server, your own key](#1-no-server-your-own-key) | nothing | the apps talk to a model provider directly; the community relay is still used for sign-in and for the devices to find each other |
-| [2. Your own relay](#2-your-own-relay) | nanoMuse Cloud on a small VPS or a home server | your own accounts, sign-in codes, hub and conversation sync; nothing about your account touches nanomuse.cn |
-| [3. A runtime of your own](#3-a-runtime-of-your-own-for-the-web-app) | the Python runtime in Docker | the web app and the hands on a computer that is always on |
+| [1. No server, your own key](#_1-no-server-your-own-key) | nothing | the apps talk to a model provider directly; the community relay is still used for sign-in and for the devices to find each other |
+| [2. Your own relay](#_2-your-own-relay) | nanoMuse Cloud on a small VPS or a home server | your own accounts, sign-in codes, hub and conversation sync; nothing about your account touches nanomuse.cn |
+| [3. A runtime of your own](#_3-a-runtime-of-your-own-for-the-web-app) | the Python runtime in Docker | the web app and the hands on a computer that is always on |
 
 ## 1. No server, your own key
 
@@ -37,7 +37,7 @@ bash scripts/self-host.sh --local          # http://127.0.0.1:8787, codes in the
 bash scripts/self-host.sh --local --bind 0.0.0.0   # reachable from the phones on the same network
 ```
 
-By hand instead of the script: `cd cloud && cp .env.example .env`, fill in `CLOUD_DOMAIN`, `PUBLIC_BASE`, `ACME_EMAIL`, `CLOUD_SECRET`, `CLOUD_ADMIN_TOKEN`, `UPSTREAM_KEY` and the sender settings, then `docker compose up -d`; or, without Caddy, `docker compose -f docker-compose.yml -f docker-compose.local.yml up -d`.
+By hand instead of the script: `cd cloud && cp .env.example .env`, fill in `CLOUD_DOMAIN`, `PUBLIC_BASE`, `ACME_EMAIL`, `CLOUD_SECRET`, `CLOUD_ADMIN_TOKEN`, `UPSTREAM_KEY` and the sender settings, then `docker compose up -d`; or, without Caddy, `docker compose -f docker-compose.yml -f docker-compose.local.yml up -d`. The relay runs as uid 10001 inside its container, and `cloud/data`, the bind-mounted data directory, must belong to that uid on the host: `mkdir -p data && sudo chown -R 10001:10001 data` before the first start, and once more when upgrading from a relay whose image ran as root (the script does this for you; a relay that cannot write the directory says so at start and stops).
 
 ### Sign-in codes
 
@@ -55,7 +55,7 @@ A code goes out every time someone signs in. `CODE_SENDER` says how:
 
 Every app signs in against `https://cloud.nanomuse.cn` unless you tell it otherwise. The devices of one account must all point at the same relay; the hub and the conversations live there.
 
-- **Android** (0.1.38). *Use a different server* under the sign-in form takes the relay's address; *Check* asks its `/healthz` and shows the version, *Use this server* keeps the address across launches. `https://` is required outside your own network; plain `http://` is accepted for a private address (`10.x`, `172.16–31.x`, `192.168.x`, `localhost`, a `.local` or `.ts.net` name). Settings → Account shows the server with *Change*, which signs the phone out first ([android.md](android.md)).
+- **Android** (0.1.38). *Use a different server* under the sign-in form takes the relay's address; *Check* asks its `/healthz` and shows the version, *Use this server* keeps the address across launches. `https://` is required outside your own network; plain `http://` is accepted for a private address (`10.x`, `172.16-31.x`, `192.168.x`, `localhost`, a `.local` or `.ts.net` name). Settings → Account shows the server with *Change*, which signs the phone out first ([android.md](android.md)).
 - **iPhone / iPad.** The same link on the sign-in sheet, with the same rules.
 - **nanoMuse Desktop.** The relay is the `baseURL` of the plugin's cloud row. Add this to `cordis.patch.yml` in the desktop's profile, `~/.nanomuse/desktop/profiles/nanomuse/` (`%USERPROFILE%\.nanomuse\desktop\profiles\nanomuse\` on Windows; `NANOMUSE_DESKTOP_HOME` moves it), and restart the app:
 
@@ -89,9 +89,19 @@ The database schema migrates forward on start. Read the release notes before a j
 Everything the relay keeps is `cloud/data/cloud.db` (SQLite) plus `CLOUD_SECRET` in `cloud/.env`. The database is useless without the secret (the identifiers are hashed and encrypted with it, and so is a sign-in code still waiting to be used, which is only six digits), and the secret is useless without the database; back them up together, and never rotate the secret unless you mean to start over:
 
 ```bash
-cd cloud && docker compose exec relay sqlite3 /srv/nanomuse-cloud/data/cloud.db ".backup /srv/nanomuse-cloud/data/backup.db" \
-  || cp data/cloud.db data/backup.db   # when the container has no sqlite3: stop the relay first for a clean copy
+cd cloud && docker compose exec -T relay python - > cloud-$(date -u +%Y%m%d).db <<'EOF'
+import os, shutil, sqlite3, sys
+src = sqlite3.connect("/srv/nanomuse-cloud/data/cloud.db")
+dst = sqlite3.connect("/tmp/backup.db")
+src.backup(dst)
+dst.close(); src.close()
+with open("/tmp/backup.db", "rb") as f:
+    shutil.copyfileobj(f, sys.stdout.buffer)
+os.remove("/tmp/backup.db")
+EOF
 ```
+
+The copy is taken with SQLite's own backup API inside the running container (the image has no `sqlite3` command) and streamed out, so it is consistent while the relay keeps writing and lands as a file of yours, outside the data directory that belongs to uid 10001. A plain `cp data/cloud.db` is not consistent: under WAL the newest writes sit in `cloud.db-wal`, and a copy of the main file alone misses them.
 
 Caddy's certificates live in the `caddy_data` volume and are fetched again if lost.
 

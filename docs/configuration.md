@@ -12,6 +12,8 @@ Any string value may contain `${VAR}` or `${VAR:-default}`; it is replaced with 
 
 Three layers, later ones win: the file, then environment overrides, then whatever was changed in the app's *Connections* screen (`<data_dir>/app-settings.json`: model, email servers, browser switch, MCP servers added from the phone). That last file only ever refers to secrets as `{{vault:NAME}}`.
 
+A key the runtime has no setting for (a misspelt `modle`, a key from another version) is ignored and the default applies; the loader says so in the log with the key's path (`llm.modle`), and `nanomuse doctor` lists such keys as a problem. Free-form tables (`[llm.extra_headers]`, an MCP server's `env`) and the `[channels.<name>]` tables of [channels.md](channels.md) take any key.
+
 ## Environment overrides
 
 These win over the file. They cover the settings people change most often and what Docker needs.
@@ -32,6 +34,8 @@ These win over the file. They cover the settings people change most often and wh
 | `NANOMUSE_VAULT_KEY` | Fernet key for the vault (default: `<data_dir>/vault.key`) |
 | `NANOMUSE_CLOUD_BASE_URL`, `NANOMUSE_CLOUD_REQUIRED`, `NANOMUSE_CLOUD_SYNC` | `[cloud]`: the relay a hosted runtime signs in against, whether a nanoMuse Cloud account is required, and the default for *Sync conversations between my devices* (`sync`, on unless set to `0`; the person's switch in *Settings → Data controls*, once touched, is what counts; [every-device.md](every-device.md#the-same-conversations-everywhere)) ([cloud.md](cloud.md); the relay's own variables are in [cloud/README.md](../cloud/README.md)) |
 | `NANOMUSE_HUB_NAME` | `hub.name`, what this device is called on the other devices |
+| `NANOMUSE_CLOUD_KEY`, `NANOMUSE_CLOUD_HINT`, `NANOMUSE_CLOUD_CHANNEL`, `NANOMUSE_ONBOARDED` | a hosted runtime (nanoMuse Web) starts signed in: the gateway that made the container hands over the account key (it goes into the vault like one typed in), the masked identifier and channel for the account page, and whether the first run is already done; nothing happens when the vault already holds a key |
+| `NANOMUSE_IN_CONTAINER=1` | says the runtime is inside a container (the image sets it; `/.dockerenv` is read too), so `sandbox.mode = auto` treats the container as the box instead of reporting bubblewrap missing |
 | `NANOMUSE_CODING_HOME` | where the coding CLIs' own homes (`~/.codex`, `~/.claude`, …) are looked for, default the user's home ([coding-agents.md](coding-agents.md)) |
 | `NANOMUSE_LOG_LEVEL` | `log_level` |
 
@@ -55,6 +59,9 @@ pass_reasoning = false             # send reasoning_content back with assistant 
 extra_headers = {}                 # e.g. { "X-End-User-Id" = "nanomuse" }
 extra_body    = {}                 # e.g. { "thinking" = { "type" = "enabled" } }
 proxy         = ""                 # an HTTP(S) or SOCKS proxy for this slot only, e.g. "http://127.0.0.1:7890"
+image_model   = ""                 # the older way to name the avatar studio's picture model on this host; see [image] below
+video_model   = ""                 # the same for clips
+video_base_url = ""                # the asynchronous video API when it is not on this host (a relaying gateway)
 ```
 
 `proxy` sends this slot's requests (and, for a `chatgpt` slot, the sign-in's token refresh) through that proxy and ignores the environment's `HTTPS_PROXY` for them; empty, the environment decides. It never applies to nanoMuse Cloud or the hub. (The phones have the same switch under *Settings → Network*; [own-key.md](own-key.md#when-the-provider-cannot-be-reached).)
@@ -66,16 +73,16 @@ Provider recipes:
 | DeepSeek | `deepseek-flash` | `https://api.deepseek.com` | default |
 | Kimi (Moonshot) | `kimi-k2.6` | `https://api.moonshot.cn/v1` | |
 | 阿里云百炼 (Alibaba Cloud Bailian) | `deepseek-v4.1-flash` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | mainland China; the hands model `qwen3.8-27b` is on the same endpoint |
-| GLM (智谱) | `glm-5.2` | `https://open.bigmodel.cn/api/paas/v4` | |
+| GLM (智谱) | `glm-5.3` | `https://open.bigmodel.cn/api/paas/v4` | |
 | 豆包 (火山方舟) | your endpoint id | `https://ark.cn-beijing.volces.com/api/v3` | models are versioned deployments; the app lists yours |
 | MiniMax | `MiniMax-M3` | `https://api.minimaxi.com/v1` | |
-| OpenAI | `gpt-5.6-sol` | `https://api.openai.com/v1` | `provider = "openai_responses"` also works |
+| OpenAI | `gpt-5.4-mini` | `https://api.openai.com/v1` | `provider = "openai_responses"` also works |
 | OpenRouter | `deepseek/deepseek-v4.1-flash` | `https://openrouter.ai/api/v1` | outside mainland China; the hands model `qwen/qwen3.8-27b` is on the same endpoint |
 | Ollama | `qwen3:8b` | `http://localhost:11434/v1` | `api_key = "ollama"`; see [Local models](#local-models) |
 | vLLM / LM Studio | your served name | `http://localhost:8000/v1` | set `tool_mode = "prompt"` if the server ignores `tools` |
 | Company gateway | as required | as required | use `extra_headers` / `extra_body`; pick the provider by the API shape the gateway speaks |
 
-The same presets are offered in the web console (*Connections → Chat model*, and on first run), each with a link to where its key comes from; the exact hostnames live in `PROVIDERS` in `nanomuse/server/connections.py`. A `base_url` saved from the app that has no path gains `/v1` (`http://host:8000` → `http://host:8000/v1`); the presets' own hosts are kept as they are. Ollama and custom endpoints may have no key.
+The same presets are offered in the web console (*Connections → Chat model*, and on first run), each with a link to where its key comes from; the exact hostnames live in `PROVIDERS` in `nanomuse/server/connections.py`. A `base_url` saved from the app that has no path gains `/v1` (`http://host:8000` → `http://host:8000/v1`); the presets' own hosts are kept as they are. Ollama and custom endpoints may have no key. Custom endpoints added from the web console are a list (`endpoints` in `app-settings.json`, each `{id, label, base_url, api_key, models}` with the key in the vault as `ENDPOINT_<ID>_API_KEY`); a slot set on one of them carries its address and that vault reference, so this file never needs to know about the list ([web.md](web.md#where-it-shows)). A `[llm]` chat model set here on an unlisted host stays as it is; only one set from the app is moved into the list.
 
 `provider` may also be an id from the provider catalogue, [`nanomuse/llm/providers.json`](../nanomuse/llm/providers.json) (`bailian`, `deepseek`, `moonshot`, `zhipu`, `openrouter`, `openai`, `gemini`, …), in which case `base_url` and, when empty, `model` fill in from the catalogue and only `api_key` is yours. The catalogue also says what each provider's key covers (chat, the hands, pictures, clips); `GET /api/providers` on the server reports which slots use which provider and what that leaves uncovered, and the app shows one sentence for a feature nothing covers ([own-key.md](own-key.md)).
 
@@ -157,6 +164,7 @@ The app layer sets the same slots: `PUT /api/connections/image` and `PUT /api/co
 name                 = "nanoMuse"      # what the agent calls itself (the app's profile overrides this)
 max_steps            = 30              # tool calls per turn before it must wrap up
 # workspace          = "./workspace"   # the only directory the files tool can touch; default ./workspace if present here, else <data_dir>/workspace
+extra_roots          = []              # directories outside the workspace the files tool may read and write, e.g. ["~/Documents/notes"]; writable inside the sandbox too
 language             = "auto"          # or a fixed language: "English", "中文", ...
 max_context_messages = 80
 max_context_images   = 4               # screenshots kept in the request: the newest N; 0 keeps all
@@ -317,15 +325,17 @@ Besides the sources there is always *My contacts*, `<data_dir>/contacts.vcf`: th
 
 ### Web search
 
-Who answers `web_search`. DuckDuckGo needs nothing and is the default, but it is scraped rather than served: it rate-limits and breaks now and then. For searches that always work, name a provider with an API: [Brave Search](https://brave.com/search/api/) or [Tavily](https://app.tavily.com/) with a key, or a [SearXNG](https://docs.searxng.org/) instance you run yourself (with `json` among its `search.formats`). The same choice is on the phone under *Connections → Web search*, where the key goes to the vault as `SEARCH_API_KEY` and *Test* runs one search.
+Who answers `web_search`. DuckDuckGo needs nothing and is the default, but it is scraped rather than served: it rate-limits and breaks now and then. For searches that always work, name a provider with an API: [Brave Search](https://brave.com/search/api/) or [Tavily](https://app.tavily.com/) with a key, [You.com](https://you.com/platform/api-keys) with or without one, or a [SearXNG](https://docs.searxng.org/) instance you run yourself (with `json` among its `search.formats`). The same choice is on the phone under *Connections → Web search*, where the key goes to the vault as `SEARCH_API_KEY` and *Test* runs one search.
 
 ```toml
 [connectors.search]
-provider = "duckduckgo"          # duckduckgo | brave | tavily | searxng
-api_key  = "{{vault:SEARCH_API_KEY}}"   # brave / tavily: nanomuse vault set SEARCH_API_KEY
+provider = "duckduckgo"          # duckduckgo | brave | tavily | you | searxng
+api_key  = "{{vault:SEARCH_API_KEY}}"   # brave / tavily, and you if you have one: nanomuse vault set SEARCH_API_KEY
 base_url = ""                    # searxng: your instance, e.g. "http://127.0.0.1:8080"
 fallback = true                  # false: a failed search fails instead of going to DuckDuckGo
 ```
+
+You.com without a key goes to `api.you.com` and allows 100 searches a day per address, with no account; past that the search says so and DuckDuckGo answers once. With a key it goes to `ydc-index.io`, the keyed Search API with higher limits; the Sentinel shows whichever host the search really uses. Requests to You.com carry the user agent `youdotcom-integration/nano-muse-nanomuse`, at the vendor's request, so they can tell nanoMuse's traffic apart; nothing else is sent, and no other provider gets it.
 
 Whichever is picked, a search that fails (a lapsed key, a rate limit, an instance that is down) is answered by DuckDuckGo instead, once, with a note on top of the results saying so, so the task goes on (the query then reaches DuckDuckGo's host as well as the one you chose; set `fallback = false` under `[connectors.search]` if that must not happen); `nanomuse doctor` reports a provider that is missing what it needs. The `region` argument of the tool (`cn-zh`, `us-en`) is passed to every provider in its own terms. The provider's host is a destination you chose, so a search after private data was read does not need approval the way an unknown host would (see [taint tracking](sentinel.md#taint-tracking)); `web_fetch` of a result still does.
 
@@ -419,6 +429,10 @@ reads_private_data = false
 
 `tools` is optional and per tool name (without the `<server>__` prefix); anything not set falls back to the server's values. It is how the phone's own tools get their defaults: on a phone the app's capabilities appear as the server `device` without any configuration ([device.md](device.md)), with the per-tool table from `nanomuse/runtime.py`.
 
+A command that needs a key takes it through `env`, and the key itself lives in the vault: write `env = { AMAP_MAPS_API_KEY = "{{vault:AMAP_KEY}}" }` and the reference is resolved when the server is started, never written to disk or shown in the app. A server added from the app (the Connections page) works the same way without you doing anything: each `env` value you type is stored in the vault under `MCP_<SERVER>_<KEY>` (upper-cased, `amap` with `AMAP_MAPS_API_KEY` becomes `MCP_AMAP_AMAP_MAPS_API_KEY`) and `app-settings.json` keeps `{{vault:...}}`; removing the server removes those entries. A value typed as a reference already is kept as typed. A plain value in `config.toml` still works, and the Connections page marks the server so you can move it.
+
+A server that does not answer is logged and skipped, and the agent starts without its tools; the line in the log names the server and the transport's error with every URL query value masked (`?key=***`) and the vault's secrets redacted, so a refused key does not end up in `logs/`.
+
 Three Chinese services the built-in skills know come as MCP servers, and `config/config.example.toml` has the block for each: 高德地图 (hosted, `AMAP_KEY` in the vault), 12306 (`npx -y 12306-mcp`, no key; trains, query only) and 快递100 (hosted, `KUAIDI100_KEY`; parcels, paid per tracking number). Which of them have actually been run inside the phone's root file system, and what else is out there: [services.md](services.md).
 
 ## `[server]`
@@ -432,13 +446,15 @@ token            = ""            # empty → generated once, stored in <data_dir
 approval_timeout = 3600          # seconds an approval card waits before counting as "deny"
 cors_origins     = []            # only for the Vite dev server, e.g. ["http://localhost:5173"]
 max_upload_mb    = 25            # largest file the app may attach to a message
-update_check     = true          # Settings → About says when a newer release is out (GitHub Releases, every 6 h)
+update_check     = true          # Settings → About says when a newer release is out (the download index, then GitHub Releases; once a day)
 start_grace      = 4             # seconds the services may take before the app answers anyway
 ```
 
-`update_check` asks `api.github.com` for the latest release at most every six hours and shows
+`update_check` asks the download mirror's index (`nanomuse.cn/dl/index.json`) and, when that does
+not answer, `api.github.com`, for the latest release once a day (sooner on *Check now*; a check
+that failed, as when the runtime came up before its network, is tried again after an hour) and shows
 the version under *Settings → About* with a link to the release page; nothing is downloaded and
-nothing about the install is sent. `NANOMUSE_NO_UPDATE_CHECK=1` turns it off too, and a hosted
+nothing about the install is sent beyond the runtime's version in the request's `User-Agent`. `NANOMUSE_NO_UPDATE_CHECK=1` turns it off too, and a hosted
 web session (a runtime started with `NANOMUSE_CLOUD_KEY`) never checks; its operator updates it.
 
 ## Where things live

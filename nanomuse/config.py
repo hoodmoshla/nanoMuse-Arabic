@@ -21,8 +21,10 @@ import json
 import os
 import re
 import tomllib
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Literal
+from types import UnionType
+from typing import Any, Literal, Union, get_args, get_origin
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -339,11 +341,13 @@ class ContactsSettings(BaseModel):
 
 class SearchSettings(BaseModel):
     """Who answers ``web_search``. DuckDuckGo needs nothing and is the default; Brave and
-    Tavily want a key, SearXNG wants the URL of an instance. A failed search falls back
-    to DuckDuckGo once, with a note, so a lapsed key does not stop a task."""
+    Tavily want a key, You.com takes one or goes without (100 searches a day), SearXNG
+    wants the URL of an instance. A failed search falls back to DuckDuckGo once, with a
+    note, so a lapsed key does not stop a task."""
 
-    provider: Literal["duckduckgo", "brave", "tavily", "searxng"] = "duckduckgo"
-    # Brave / Tavily. May be a vault placeholder — the app stores it as {{vault:SEARCH_API_KEY}}.
+    provider: Literal["duckduckgo", "brave", "tavily", "you", "searxng"] = "duckduckgo"
+    # Brave / Tavily, You.com optionally. May be a vault placeholder — the app stores it as
+    # {{vault:SEARCH_API_KEY}}.
     api_key: str = ""
     # SearXNG: your instance, e.g. "http://127.0.0.1:8080".
     base_url: str = ""
@@ -603,8 +607,9 @@ class ServerSettings(BaseModel):
     cors_origins: list[str] = Field(default_factory=list)
     # Largest file the app may attach to a message (photos from a phone run 3–12 MB).
     max_upload_mb: int = 25
-    # Ask GitHub Releases (at most every six hours) whether a newer nanoMuse is out, and say so
-    # under Settings → About. Nothing is downloaded or reported. NANOMUSE_NO_UPDATE_CHECK=1 also turns it off.
+    # Ask the download mirror's index, then GitHub Releases (once a day, or on "Check now")
+    # whether a newer nanoMuse is out, and say so under Settings → About. Nothing is downloaded
+    # or reported. NANOMUSE_NO_UPDATE_CHECK=1 also turns it off.
     update_check: bool = True
     # How long the services (tools, MCP servers, the cloud account) may take before the
     # socket opens anyway; past it the app answers and /api/health names the step still running.
@@ -852,19 +857,28 @@ def load_app_settings(data_dir: Path) -> dict[str, Any]:
         return {}
     try:
         data = json.loads(path.read_text("utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, json.JSONDecodeError) as exc:
+        # a file that cannot be read is not silently a first start: say so in the log, the
+        # defaults apply until the next save rewrites it
+        logger.warning("{} could not be read ({}); the app's settings are ignored", path, exc)
         return {}
     return data if isinstance(data, dict) else {}
 
 
 def save_app_settings(data_dir: Path, data: dict[str, Any]) -> None:
+    """Write the file whole or not at all: a temporary file next to it, mode 0600 before any
+    content is in it, then renamed over the old one, so a crash mid-write cannot leave a
+    truncated file that the next start reads as a first start."""
     data_dir.mkdir(parents=True, exist_ok=True)
     path = data_dir / APP_SETTINGS_FILE
-    path.write_text(json.dumps({"version": 1, **data}, ensure_ascii=False, indent=1), "utf-8")
+    tmp = path.with_suffix(".tmp")
+    tmp.touch(mode=0o600, exist_ok=True)
+    tmp.write_text(json.dumps({"version": 1, **data}, ensure_ascii=False, indent=1), "utf-8")
     try:
-        path.chmod(0o600)
+        tmp.chmod(0o600)
     except OSError:  # pragma: no cover
         pass
+    tmp.replace(path)
 
 
 def apply_app_settings(settings: Settings, data: dict[str, Any]) -> None:
@@ -907,7 +921,7 @@ def apply_app_settings(settings: Settings, data: dict[str, Any]) -> None:
                 setattr(m, f"embedding_{key}", str(emb[key]).strip().rstrip("/"))
     if search := data.get("search"):
         web = settings.connectors.search
-        if search.get("provider") in ("duckduckgo", "brave", "tavily", "searxng"):
+        if search.get("provider") in ("duckduckgo", "brave", "tavily", "you", "searxng"):
             web.provider = search["provider"]
         for key in ("api_key", "base_url"):
             if key in search and search[key] is not None:
@@ -986,6 +1000,8 @@ def apply_app_settings(settings: Settings, data: dict[str, Any]) -> None:
             settings.hands.backend = hands["backend"]
         if hands.get("coords") in ("pixels", "norm1000"):
             settings.hands.coords = hands["coords"]
+        if hands.get("mode") in ("auto", "screen", "window"):
+            settings.hands.mode = hands["mode"]
     if cloud := data.get("cloud"):
         if cloud.get("base_url"):
             settings.cloud.base_url = str(cloud["base_url"]).strip().rstrip("/")
@@ -1009,6 +1025,71 @@ def apply_app_settings(settings: Settings, data: dict[str, Any]) -> None:
         settings.mcp.servers.append(server)
 
 
+# top-level tables of config.toml that are not settings fields: ``nanomuse.channels.store``
+# reads ``[channels.<name>]`` itself (docs/channels.md)
+_TABLES_READ_ELSEWHERE = frozenset({"channels"})
+
+
+def _field_models(annotation: Any) -> tuple[type[BaseModel] | None, str]:
+    """The settings model a field's values are validated as, and how it holds them: ``"one"``,
+    ``"list"`` (``list[Model]``) or ``"dict"`` (``dict[str, Model]``). ``None`` for a scalar, a
+    free-form ``dict`` or a list of scalars."""
+    origin = get_origin(annotation)
+    if origin is Union or origin is UnionType:
+        for arg in get_args(annotation):
+            if arg is not type(None):
+                found = _field_models(arg)
+                if found[0] is not None:
+                    return found
+        return None, "one"
+    if origin is list:
+        (item,) = get_args(annotation) or (Any,)
+        return _field_models(item)[0], "list"
+    if origin is dict:
+        args = get_args(annotation)
+        return (_field_models(args[1])[0] if len(args) == 2 else None), "dict"
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return annotation, "one"
+    return None, "one"
+
+
+def unknown_keys(
+    raw: Mapping[str, Any], model: type[BaseModel] = Settings, prefix: str = ""
+) -> list[str]:
+    """Dotted paths of the keys in ``raw`` that no settings model has a field for.
+
+    Pydantic drops unknown keys without a word, so a misspelt ``[llm] modle`` or a key from
+    another version is read as "not set" and the default applies. Free-form tables
+    (``llm.extra_headers``, an MCP server's ``env``) take any key, and so do the top-level
+    tables other modules read from the same file (``[channels.<name>]``).
+    """
+    fields = model.model_fields
+    by_alias = {f.alias: name for name, f in fields.items() if isinstance(f.alias, str)}
+    out: list[str] = []
+    for key, value in raw.items():
+        if not prefix and key in _TABLES_READ_ELSEWHERE:
+            continue
+        path = f"{prefix}{key}"
+        name = key if key in fields else by_alias.get(key)
+        if name is None:
+            out.append(path)
+            continue
+        sub_model, shape = _field_models(fields[name].annotation)
+        if sub_model is None:
+            continue
+        if shape == "list" and isinstance(value, list):
+            for i, item in enumerate(value):
+                if isinstance(item, Mapping):
+                    out.extend(unknown_keys(item, sub_model, f"{path}[{i}]."))
+        elif shape == "dict" and isinstance(value, Mapping):
+            for sub_key, item in value.items():
+                if isinstance(item, Mapping):
+                    out.extend(unknown_keys(item, sub_model, f"{path}.{sub_key}."))
+        elif shape == "one" and isinstance(value, Mapping):
+            out.extend(unknown_keys(value, sub_model, f"{path}."))
+    return out
+
+
 def load_settings(path: str | Path | None = None) -> Settings:
     """Load settings from TOML (if found) + environment + what was changed in the app."""
     config_file = find_config_file(path)
@@ -1016,6 +1097,8 @@ def load_settings(path: str | Path | None = None) -> Settings:
     if config_file is not None:
         with config_file.open("rb") as fh:
             raw = tomllib.load(fh)
+        for key in unknown_keys(raw):
+            logger.warning("{}: unknown key {} is ignored (a typo?)", config_file, key)
     raw = _expand_env(raw)
     _apply_env_overrides(raw)
     settings = Settings.model_validate(raw)
@@ -1059,4 +1142,5 @@ __all__ = [
     "load_app_settings",
     "load_settings",
     "save_app_settings",
+    "unknown_keys",
 ]

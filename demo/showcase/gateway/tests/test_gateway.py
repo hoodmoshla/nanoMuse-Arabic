@@ -102,6 +102,29 @@ async def test_a_visitor_gets_a_private_muse(world):
         assert info["active_sessions"] == 1 and info["demo_model"] == "demo-model"
 
 
+async def test_the_visitors_clock_reaches_the_container(world):
+    """The page sends the browser's IANA zone; the container's TZ is set from it, so a
+    reminder "in 2 minutes" is due in 2 minutes and the Muse quotes the visitor's time.
+    Nothing sent, or a name that is not a zone's shape, leaves the container on UTC."""
+    settings, runner, upstream, clock, manager, app = world
+    async with app.router.lifespan_context(app):
+        c = await client_for(app)
+        r = await c.post(
+            "/api/demo/session",
+            json={"time_zone": "America/Argentina/Buenos_Aires"},
+            headers={"x-forwarded-for": "1.2.3.4"},
+        )
+        assert r.status_code == 201, r.text
+        assert runner.running[f"nm-{body(r)['id']}"]["TZ"] == "America/Argentina/Buenos_Aires"
+        r = await c.post("/api/demo/session", json={}, headers={"x-forwarded-for": "5.6.7.8"})
+        assert r.status_code == 201 and "TZ" not in runner.running[f"nm-{body(r)['id']}"]
+        for bad in ("Asia/Shanghai; rm -rf /", "../etc", "x" * 65, "Europe/"):
+            r = await c.post(
+                "/api/demo/session", json={"time_zone": bad}, headers={"x-forwarded-for": "9.9.9.9"}
+            )
+            assert r.status_code == 422, bad
+
+
 async def test_a_dead_container_is_logged_without_the_query(world, caplog):
     settings, runner, upstream, clock, manager, app = world
     async with app.router.lifespan_context(app):
@@ -382,13 +405,16 @@ def test_usage_parsing():
 
 
 def test_which_deepseek_models_see():
-    # the rule shared by every client (contract C4): DeepSeek is text-only before v4.1, and
-    # anything whose id says vision or ocr sees
+    # the rule shared by every client (contract C4, nanomuse/llm/vision.py): DeepSeek is
+    # text-only before v4.1, except the Flash line, which V4.1 Flash serves under its older
+    # names too; anything whose id says vision or ocr sees
     assert text_only("deepseek-v4-pro")
-    assert text_only("DeepSeek-V4-Flash")
     assert text_only("deepseek-v4")
     assert text_only("deepseek-chat") and text_only("deepseek-reasoner")
+    assert text_only("deepseek/deepseek-v4-pro")
     assert not text_only("deepseek-v4.1-flash")
+    assert not text_only("deepseek-flash") and not text_only("DeepSeek-V4-Flash")
+    assert not text_only("deepseek-ai/DeepSeek-V4-Flash")
     assert not text_only("deepseek-v4.2-pro") and not text_only("deepseek-v5")
     assert not text_only("deepseek-vl-vision") and not text_only("deepseek-ocr")
     # every other family is taken as sighted (the runtime finds out for itself)

@@ -1,5 +1,5 @@
 /**
- * Settings → Coding agents: the Cursor, Codex and Claude Code chats on this computer and
+ * Settings → Coding agents: the Cursor, Codex, Claude Code and DeepSeek Harness chats on this computer and
  * on the account's other computers (`docs/coding-agents.md`). This computer's agents at
  * the top — name, version, how many are running — the other computers as chips after
  * them (each read over the hub by the host); pick an agent → its chats (title, workspace,
@@ -14,7 +14,7 @@
  */
 import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import { createElement as h, Fragment, useCallback, useEffect, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
-import { call, errorStyle, type Translate } from './api.ts'
+import { call, errorStyle, failureText, type Translate } from './api.ts'
 import { IconArrowUp, IconChevronLeft, IconChevronRight, IconCpu, IconFolder, IconLaptop, IconPlus, IconRefresh, IconSquare } from './icons.tsx'
 import { composing } from './keys.ts'
 import { useLive, type LiveDevice } from './live.ts'
@@ -173,7 +173,7 @@ export function useCodingLive(): Record<string, CodingLive> {
 
 // ---- small pieces ----------------------------------------------------------------------
 
-const GLYPH: Record<string, string> = { cursor: 'C', codex: 'X', claude: 'A' }
+const GLYPH: Record<string, string> = { cursor: 'C', codex: 'X', claude: 'A', dsh: 'D' }
 
 function Glyph({ agent, size = 32 }: { agent: string; size?: number }): ReactNode {
   return h('span', { className: `nm-cd-glyph nm-cd-glyph-${agent}`, style: { width: size, height: size, fontSize: Math.round(size * 0.44) }, 'aria-hidden': true }, GLYPH[agent] ?? '·')
@@ -190,7 +190,7 @@ function StatusPill({ t, status }: { t: Translate; status: string }): ReactNode 
 }
 
 function agentName(agents: CodingAgent[] | undefined, id: string): string {
-  return agents?.find((a) => a.id === id)?.name ?? ({ cursor: 'Cursor', codex: 'Codex', claude: 'Claude Code' } as Record<string, string>)[id] ?? id
+  return agents?.find((a) => a.id === id)?.name ?? ({ cursor: 'Cursor', codex: 'Codex', claude: 'Claude Code', dsh: 'DeepSeek Harness' } as Record<string, string>)[id] ?? id
 }
 
 /** Live runs on one computer: the shadows carry the other computer's name; local ones none. */
@@ -237,7 +237,7 @@ export function makeCodingPanel(t: Translate) {
         setRuns(a.runs ?? [])
         setSessions(s.sessions)
       } catch (err: unknown) {
-        setError((err as Error).message)
+        setError(failureText(t, err))
         setAgents([])
         setSessions([])
       } finally {
@@ -409,7 +409,7 @@ function SessionView({ t, device, deviceLabel, agent, id, agentLabel, onBack }: 
       setSession(await api.session(device, agent, id))
       setError(undefined)
     } catch (err: unknown) {
-      setError((err as Error).message)
+      setError(failureText(t, err))
     }
   }, [device, agent, id])
   useEffect(() => {
@@ -438,7 +438,7 @@ function SessionView({ t, device, deviceLabel, agent, id, agentLabel, onBack }: 
       setText('')
       setError(undefined)
     } catch (err: unknown) {
-      setError((err as Error).message)
+      setError(failureText(t, err))
     } finally {
       setSending(false)
     }
@@ -487,7 +487,7 @@ function SessionView({ t, device, deviceLabel, agent, id, agentLabel, onBack }: 
             },
           }),
           running
-            ? h('button', { type: 'button', className: 'nm-cd-send nm-cd-stop', 'aria-label': t('cdStop'), title: t('cdStop'), onClick: () => void api.stop(running.run.id, device).catch((err: Error) => setError(err.message)) }, h(IconSquare, { size: 16 }))
+            ? h('button', { type: 'button', className: 'nm-cd-send nm-cd-stop', 'aria-label': t('cdStop'), title: t('cdStop'), onClick: () => void api.stop(running.run.id, device).catch((err: unknown) => setError(failureText(t, err))) }, h(IconSquare, { size: 16 }))
             : h('button', { type: 'submit', className: 'nm-cd-send', disabled: !text.trim() || sending || !canSend, 'aria-label': t('cdSend'), title: t('cdSend') }, h(IconArrowUp, { size: 18 }))))))
 }
 
@@ -544,7 +544,7 @@ function NewChatSheet({ t, agent: initial, agents, device, deviceLabel, onClose,
     try {
       onStarted(await api.send({ agent, text: text.trim(), workspace: workspace.trim(), device }))
     } catch (err: unknown) {
-      setError((err as Error).message)
+      setError(failureText(t, err))
     } finally {
       setBusy(false)
     }
