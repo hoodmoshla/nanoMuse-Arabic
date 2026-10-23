@@ -23,11 +23,11 @@ and your devices. After the code the app has:
 
 - a provider called **nanoMuse Cloud** under *Settings → Providers*, an
   ordinary OpenAI-compatible provider whose key is the token the relay issued;
-- the four rows of *Settings → Models* (web console: *Connections*) on the
-  account's models when you had chosen none: the recommended chat model, the
-  recommended hands model (the one that reads screenshots and drives a phone or
-  a computer; each model on the relay's menu says which of the two it is for),
-  the picture model and the clip model. A row you have not set follows one
+- the chat and hands rows of *Settings → Models* (web console: *Connections*) on
+  the account's `Qwen/Qwen3.6-27B-FP8` when you had chosen none. It reads image
+  input, so pictures in chat and screenshots used for GUI operation still work.
+  The account does not provide image or video generation; those two rows require
+  a custom provider and API key on the device. A row you have not set follows one
   order: the chat model's provider when it is a key of yours that can do the
   job, else nanoMuse Cloud while signed in, else the first key of yours that
   can; the *Automatic* entry of the row says what that gives right now, and a
@@ -36,7 +36,7 @@ and your devices. After the code the app has:
 
 *Settings → nanoMuse Cloud* (the *Account* screen) shows who is signed in (a
 masked hint, never the number) and since when; sets, changes or removes the
-**password** (eight characters or more; scrypt on the relay; locked for a while
+**password** (the relay sets the minimum, eight characters by default; scrypt on the relay; locked for a while
 after repeated wrong attempts, and a fresh code sign-in opens it again); today's
 spend against the allowance in ¥ and $ with a meter; **usage by kind** (chat,
 pictures, video) today and in all, and **by model**; the
@@ -84,17 +84,19 @@ The relay is the code in [`cloud/`](../cloud/README.md). It stores:
   so the operator can see who an account belongs to on the admin page (the
   database file alone shows nothing);
 - the hash of each key issued, with the device name you signed in from, how
-  (code or password) and when it was last used; revoked keys keep their row
-  so the sign-ins list can say so;
+  (code or password), when it was last used and, once registered, its Hub
+  device id and kind; revoked keys keep their row so the sign-ins list can say
+  so;
 - the password, if you set one, as an scrypt hash, never the password;
 - per request: the kind (chat, picture, video), the model, the token counts
   and the amount charged;
 - a timeline of account events (signed in, failed sign-in, password set or
   changed, signed out, refused for budget, upstream error) with a
   device name, a model or an error code as the detail, never message content;
-- the id of each video task with its price and the provider's last word on it,
-  so only the account that started one can poll it and the clip is charged once
-  (the rows go after three days);
+- legacy video-task rows with their price and the provider's last word, retained
+  only for accounting cleanup and removed after three days. Hosted media is
+  fully retired, so task polling returns `410 hosted_media_retired` like every
+  other hosted media route and never reaches the provider;
 - the agent's name and look (`/v1/me/profile`): which face it wears (the dragon,
   an emoji on a colour, or one drawn in the avatar studio, with that face's five
   stills as small WebP pictures), so every device of the account shows the same
@@ -121,8 +123,11 @@ The relay is the code in [`cloud/`](../cloud/README.md). It stores:
 
 Images and tool results are never stored, and message content only as the
 *Data controls* and *Conversation sync* sections below say; with both switches off, nothing: the request
-is forwarded to the upstream model (Alibaba Cloud Model Studio) and the reply
-is streamed back. Every response carries an `X-Nanomuse-Request` id so a problem report
+is forwarded to the operator-configured upstream model and the reply is streamed
+back. The relay admits at most `CHAT_CONCURRENCY` chat requests to that shared
+deployment at once and retries a 429 or 5xx only before output starts; the
+remaining requests wait without duplicating a turn. Every response carries an
+`X-Nanomuse-Request` id so a problem report
 can be matched to a ledger row without any content being logged. Deleting the
 account (`POST /v1/auth/delete` with the account's key) removes all of it: the
 account, keys, devices, profile, ledger, events, kept conversations, video
@@ -220,7 +225,10 @@ switch as it is. Nobody but the account's devices can read the store: the
 operator's admin page shows counts only (accounts with it on and off, how many
 conversations and messages, their size), never a text, never which account
 (`GET /v1/admin/sync`). The pulls are triggered by the hub's `sync` frame
-([hub.md](hub.md#frames)), at launch and once a minute.
+([hub.md](hub.md#frames)), at launch, when the hub socket reconnects or the
+desktop window comes back to the front, and once a minute; on the desktop a
+turn already received from another device stays above any prompt sent on this
+computer after it arrived, even if the two devices' clocks disagree.
 
 The API, all under the account's key (401 without one; 409 `sync_off` while the
 switch is off, for reads as well as writes):
@@ -289,36 +297,19 @@ to draw on, for its lifetime, not by the day (relay 0.5):
 | | `cloud.nanomuse.cn` |
 |---|---|
 | sign-up | open to anyone with a mainland China mobile number or an e-mail address |
-| free allowance | **¥10 per account** at the time of writing, across chat, pictures and clips; it does not reset. The figure is the relay's to set (it can go up without an app update; the apps print what the relay says, `/v1/config`), and the account page always shows the current one |
+| free allowance | **¥10 per account** at the time of writing, for the hosted Qwen chat/vision/GUI model; it does not reset. The figure is the relay's to set (it can go up without an app update; the apps print what the relay says, `/v1/config`), and the account page always shows the current one |
 | invitations | each *new* person who signs up with your code adds **¥5** (again, the relay's figure) to your pool, and the same to theirs; both sides get it after your friend's first request, not at sign-up |
 | when it is gone | bring your own key or a plan you already pay for: in mainland China, [Alibaba Cloud Bailian](own-key.md) first (one key covers chat, the hands, pictures and clips); elsewhere, [OpenRouter](https://openrouter.ai/keys) or OpenAI first (Bailian only signs up accounts from mainland China); a ChatGPT, Claude or Kimi plan signs in where the client has the flow; any OpenAI-compatible endpoint works; sign-in and your devices are unaffected |
-| members | the developer and the people they list have no limit, and may set any model the provider has (a chat model for chat, an image one for pictures, a video one for clips): the apps' model picker lists them after the menu as *More models on your account* (relay 0.10 reads the provider's list under the Cloud key), and an id can still be typed (*Other model…*) |
+| members | the developer and the people they list have no limit and may name other chat models from the hosted provider; hosted image and video generation stays disabled for them too |
 | rate | 30 requests per minute |
 | tokens | no ceiling; usage is metered and shown |
 
-Spend is counted at the model provider's list prices (Alibaba Cloud Model
-Studio, Beijing region, read on 2026-10-07). `deepseek-v4.1-flash`, the chat
-model since 0.1.34 (it reads pictures and thinks before it answers), is ¥2 in /
-¥8 out per million tokens from 8:00 to 22:00 Beijing time and ¥1 / ¥4 the rest
-of the night; the hour the reply comes in decides. `qwen3.8-27b`, the hands
-model, usable for chat too, is ¥3 / ¥12; `qwen3.8-flash` ¥0.8 / ¥2.7;
-`qwen-image-3.0` ¥0.18 a picture, and an edit adds ¥0.02 for the picture sent
-in; `wan2.2-i2v-flash` ¥0.10 a second of video at 480P (a 5-second clip is
-¥0.50), ¥0.20 a second at 720P and ¥0.48 at 1080P. A clip is charged once its
-task is done, at the price fixed when it was asked for; until then the price is
-held against the pool for up to an hour. An app that was closed never comes
-back for the answer, so since relay 0.24 the relay asks the provider itself,
-once before that hour is up and once more before the task's row is dropped:
-a finished clip is charged then, a failed one costs nothing, and a later poll
-from the app charges nothing more. The part of a prompt the
-provider served from its cache (the system prompt and the history, turn after
-turn) is counted at the provider's cached rate, 10 % of the input price on
-DeepSeek and 20 % on the Qwen models, as the reply's `usage` reports it. The
-reasoning tokens of a thinking model count as output. A typical day of
-chatting costs a few fen; ¥10 is roughly two million tokens of the chat model
-or fifty pictures. A new face (four candidates, four poses and four clips)
-comes to about ¥3.5, and the app shows the estimate and what is left before it
-draws.
+Spend on `Qwen/Qwen3.6-27B-FP8` is counted at ¥3 input / ¥12 output per
+million tokens, with cached input at 20% of the input price, as reported in
+the reply's `usage`. Reasoning tokens count as output. Image input is part of
+that chat request; it is not image generation. Hosted picture and clip
+generation is not charged because it is not available: add a provider and API
+key of your own for those capabilities.
 
 *Settings → nanoMuse Cloud* shows what was used of the pool in ¥ and $, what
 is left, and how the pool grows. At 80 % the app says so once; when the pool
@@ -358,16 +349,20 @@ code brought, with how many of those ever made a request, how many are still
 pending (no first request yet, so no bonus yet) and how many were seen from
 one of the inviter's own addresses, and an account's page names its inviter
 and lists the people it brought (`GET /v1/admin/invites`). Padding one's own
-pool is not worth the trouble: the bonus is paid at the invitee's first
-charged request, new accounts from a mail domain that is not a well-known
-provider are limited per day (`SIGNUP_PER_DOMAIN_DAY`, 20 by default; the
-refusal is `domain_limited`), and the health check raises two alerts, an
-inviter whose code brought more than ten accounts in a day and an inviter with
-twenty or more invitees of whom almost none ever made a request. Each unfolded
-inviter in the *Invites* view, and the *Brought* card of its account page, has
-one action that reclaims the invite credit (what was already spent stays),
-and may disable the account and delete the invited accounts that never made a
-request (`POST /v1/admin/invites/abuse`).
+pool is not worth the trouble: the bonus is paid once the invitee has
+accumulated real successful provider spend (`INVITE_SETTLE_MIN_SPENT_UY`, 200
+micro-yuan by default) from a network address different from the inviter's,
+e-mail `+tag` subaddresses and Gmail dot or `googlemail.com` aliases map to
+the same account, disposable mail domains (`DEFAULT_SIGNUP_DOMAIN_BLOCK` plus
+`SIGNUP_DOMAIN_BLOCK`) are refused, new accounts from a mail domain that is
+not a well-known provider are limited per day (`SIGNUP_PER_DOMAIN_DAY`, 5 by
+default; the refusal is `domain_limited`), and the health check raises two
+alerts, an inviter whose code brought more than ten accounts in a day and an
+inviter with twenty or more invitees of whom almost none ever made a request.
+Each unfolded inviter in the *Invites* view, and the *Brought* card of its
+account page, has one action that reclaims the invite credit (what was
+already spent stays), and may disable the account and delete the invited
+accounts that never made a request (`POST /v1/admin/invites/abuse`).
 Every operator action on an account is on record: disabling or enabling it,
 making or unmaking a member, a grant, a credit, a pool change, a settings change
 and a deletion each write a line in the audit log of the Controls section (who,
@@ -482,8 +477,8 @@ The app's calls, all JSON:
 GET  /healthz                                                 → {ok, version, models[], paused[]}; no key
 GET  /v1/config                                               → {version, signup_open, paused[], allowance_cny, allowance_usd, invite_bonus_cny, invitee_bonus_cny, usd_cny, invite_url, own_key_docs, openrouter_url, privacy_url, repo_url, improve_default, code_ttl_s, password_min_len}; no key, a minute's cache
 POST /v1/auth/code          {identifier}                      → 204 (a disabled account gets the same 204 and nothing is sent); 400 phone_region, 403 not_invited | signup_closed, 429 code_too_often | domain_limited, 502 send_failed
-POST /v1/auth/verify        {identifier, code, device, invite?} → {api_key, base_url, account, tokens, models, created, region}; 400 code_wrong | code_expired, 403 account_disabled
-POST /v1/auth/login         {identifier, password, device}    → the same; 401 bad_credentials, 429 locked, 400 no_password
+POST /v1/auth/verify        {identifier, code, device, invite?, device_id?, device_kind?} → {api_key, base_url, account, tokens, models, created, region}; the optional identity binds the key to that Hub device (hub.md); 400 code_wrong | code_expired | bad_device, 403 account_disabled
+POST /v1/auth/login         {identifier, password, device, device_id?, device_kind?} → the same; 401 bad_credentials, 429 locked, 400 bad_device
 POST /v1/auth/password      Bearer  {password, current?}      → 204; "" with current removes it; 400 password_short | password_long | password_weak | password_wrong | password_required
 POST /v1/auth/session-key   Bearer  {device?, ttl_s?}         → {api_key, expires_at}; a key that lapses on its own (90 days at most); 403 session_from_session
 GET  /v1/me                 Bearer                            → {region: cn | intl | unknown, account{…, has_password, sessions, signed_in_via}, usage{today, total by kind / model}, tokens, spend{…, ways, guidance}, invite, contribute, models, defaults, base_url, clips, recent, nudges, paused[]}
@@ -520,7 +515,10 @@ clips under the provider's own paths (`POST
 /api/v1/services/aigc/video-generation/video-synthesis`, `GET
 /api/v1/tasks/{id}` for the account's own tasks, `GET /api/v1/uploads`). Errors
 are `{"error": {"message", "type": "nanomuse_cloud", "code"}}` with a stable
-`code` the app turns into a sentence. Relay 0.22 adds the codes of the
+`code` the app turns into a sentence. On the hosted service, new image/video
+requests, uploads, typed media-model lookups, media estimates and video-task
+polling return `410 hosted_media_retired` with
+`action: configure_own_provider` before any upstream request. Relay 0.22 adds the codes of the
 operator's [switches](#controls): `403 signup_closed`, `503 service_paused`,
 `503 sync_paused`, `503 hub_paused` (and the hub's close code `4003
 hub_paused`), and `allowance_exhausted` with `paused: true` when the free

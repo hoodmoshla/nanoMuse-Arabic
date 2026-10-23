@@ -2,7 +2,7 @@ import { pathToFileURL } from "node:url";
 import { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, powerSaveBlocker, screen, shell, systemPreferences, Tray } from "electron";
 import { randomBytes } from "node:crypto";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -11,12 +11,15 @@ import { defaultHelperPath, HELPER_NAME, MacHelper } from "./mac-helper";
 import * as macPermissions from "./mac-permissions";
 import { Operator, SCREEN_PERMISSION_TEXT, type Marker } from "./operator";
 import { startOperatorServer, type OperatorServer } from "./operator-server";
-import { EXTERNAL_URL, navigationVerdict, sameOrigin } from "./navigation";
+import { EXTERNAL_URL, mediaPermissionAllowed, navigationVerdict, sameOrigin } from "./navigation";
+import { readPrivateJson, writePrivateJson } from "./private-json";
 import { relink } from "./profile-link";
-import { maskProxyUrl, proxyEnv, validProxyUrl } from "./proxy";
+import { maskProxyUrl, proxyEnv, trustedRelayHosts, validProxyUrl } from "./proxy";
 import { HostStartWatch, maskToken, waitedText, type WaitState } from "./host-start";
 import { HostWork } from "./host-work";
 import { ProtectedExit, type ExitDialog, type ExitIntent, type WorkItem, type WorkSource } from "./protected-exit";
+import { WindowsUpdates, RestartNsisUpdater } from "./windows-updates";
+import { windowsNetworkCost } from "./windows-network-cost";
 
 /**
  * nanoMuse Desktop — the nanoMuse desktop, built on DeepSeek Harness.
@@ -116,6 +119,7 @@ let child: ChildProcess | null = null;
 let mainWindow: BrowserWindow | null = null;
 let hostUrl: string | null = null;
 let quitting = false;
+let sessionEnding = false;
 let restarts = 0;
 /** The proxy the running Host was started with ("" for none): the Network row offers a restart while it differs from the setting. */
 let hostProxy = "";
@@ -338,7 +342,7 @@ function startHost(): Promise<string> {
         // The proxy for the model providers (the Cloud page's Network row): on the Host's
         // environment, which Node's fetch reads with NODE_USE_ENV_PROXY and the runtime's
         // httpx reads as it is; the relay and loopback are on NO_PROXY (src/proxy.ts).
-        const proxied = proxyEnv(prefs.proxy, prefs.relayHosts ?? []);
+        const proxied = proxyEnv(prefs.proxy, trustedRelayHosts());
         Object.assign(env, proxied);
         hostProxy = proxied.HTTPS_PROXY ?? "";
         if (hostProxy) log(`proxy: providers through ${maskProxyUrl(hostProxy)}; never for ${proxied.NO_PROXY}`);
@@ -503,19 +507,22 @@ let restartingHost = false;
  * The operator server and the helper stay; the page reloads under the Host's new token.
  */
 async function restartHost(): Promise<void> {
-  if (restartingHost || quitting || !hostUrl) return;
-  restartingHost = true;
-  log("host: restarting at the person's request");
-  try {
-    await stopHost();
-    restarts = 0;
-    await boot();
-  } catch (exc) {
-    log(`restart failed: ${String(exc)}`);
-    await reportStartupFailure(exc);
-  } finally {
-    restartingHost = false;
-  }
+  if (restartingHost || quitting || !hostUrl || !exitGuard) return;
+  await exitGuard.requestRestart("restart-host", async () => {
+    restartingHost = true;
+    log("host: restarting at the person's request");
+    try {
+      await stopHost();
+      restarts = 0;
+      await boot();
+    } catch (exc) {
+      log(`restart failed: ${String(exc)}`);
+      await reportStartupFailure(exc);
+      throw exc;
+    } finally {
+      restartingHost = false;
+    }
+  });
 }
 
 // ---- the protected exit ---------------------------------------------------------------------
@@ -525,21 +532,26 @@ async function restartHost(): Promise<void> {
 // closes so nothing new starts under the hand-over, and work that is on is named first, with
 // keeping it running as the default; an explicit confirmation ends it, and the stop is waited
 // for before the Host goes. Closing the window to stay in the tray, idling, a crash and the
-// system switching off never come through here, and `approval` stays `none` for them: the
-// later install-on-exit change reads that flag and nothing else.
+// system switching off never request installation through this path.
 
 /** The Host's work routes, once the Host is up; until then nothing answers and the exit reads as idle. */
 let hostWork: HostWork | null = null;
-/** The one protected exit (a quit today; the restart-update request of the update tickets reuses it). */
+/** The one protected exit, reused by both update installation intents. */
 let exitGuard: ProtectedExit | null = null;
+let windowsUpdates: WindowsUpdates | null = null;
 
 const workSource: WorkSource = {
-  busy: async () => (await hostWork?.busy()) ?? [],
-  setGate: async (open) => {
-    await hostWork?.setGate(open);
+  busy: async (strict) => {
+    if (strict && !hostWork) throw new Error("The Host is not ready for an update restart");
+    return (await hostWork?.busy(strict)) ?? [];
   },
-  stopAll: async () => {
-    await hostWork?.stopAll();
+  setGate: async (open, strict) => {
+    if (strict && !hostWork) throw new Error("The Host is not ready for an update restart");
+    await hostWork?.setGate(open, strict);
+  },
+  stopAll: async (strict) => {
+    if (strict && !hostWork) throw new Error("The Host is not ready for an update restart");
+    await hostWork?.stopAll(strict);
   },
 };
 
@@ -559,7 +571,7 @@ function workLine(item: WorkItem): string {
 
 const exitDialog: ExitDialog = {
   async confirm(items, intent) {
-    const restart = intent === "restart-update";
+    const restart = intent !== "quit";
     const { response } = await dialog.showMessageBox({
       type: "warning",
       title: T.exitBusyTitle,
@@ -576,14 +588,17 @@ const exitDialog: ExitDialog = {
 
 /** A real exit, the person's own: the protected exit asks about the work first. */
 function protectedQuit(intent: ExitIntent = "quit"): void {
-  if (quitting || !exitGuard) {
+  if (quitting || sessionEnding || !exitGuard) {
     app.quit();
     return;
   }
-  void exitGuard.requestExit(intent).then((went) => {
+  const exit = windowsUpdates && intent === "quit" ? windowsUpdates.quit() : exitGuard.requestExit(intent);
+  void exit.then(() => {
     // Keep running after the last window closed with no tray to come back through: the
     // window comes back, or the app would stay alive with nothing on screen to reach it by.
-    if (!went && !mainWindow && !tray) void showWindow();
+    // An update being installed is on its way out (the library quits after the installer
+    // has started), so it is not read as kept running.
+    if (!quitting && windowsUpdates?.snapshot().phase !== "installing" && !mainWindow && !tray) void showWindow();
   });
 }
 
@@ -766,12 +781,11 @@ interface Prefs {
   openAtLogin: boolean;
   menuBar: boolean;
   quickChat: boolean;
+  autoDownloadUpdates?: boolean;
   /** The person's own quick-chat combination (an Electron accelerator); absent means the platform's default. */
   quickChatKey?: string;
   /** The proxy for the model providers (`http://host:port`, `socks5://host:port`); absent means none. */
   proxy?: string;
-  /** The relay hosts the plugin reported (its `config.baseURL`), kept on NO_PROXY with the default relay. */
-  relayHosts?: string[];
 }
 const PREFS_DEFAULT: Prefs = { openAtLogin: false, menuBar: true, quickChat: true };
 /** ⌥ Space on macOS as in Muse; Ctrl+Alt+Space where Alt+Space is the window menu. */
@@ -798,22 +812,18 @@ function prefsPath(): string {
 }
 
 function readPrefs(): Prefs {
-  try {
-    const raw = JSON.parse(readFileSync(prefsPath(), "utf8")) as Partial<Prefs>;
-    return { ...PREFS_DEFAULT, ...(typeof raw === "object" && raw ? raw : {}) };
-  } catch {
-    return PREFS_DEFAULT;
-  }
+  return readPrivateJson(prefsPath(), (raw) =>
+    typeof raw === "object" && raw ? { ...PREFS_DEFAULT, ...(raw as Partial<Prefs>) } : undefined,
+  ) ?? PREFS_DEFAULT;
 }
 
-function writePrefs(): void {
+function writePrefs(next: Prefs = prefs, strict = false): void {
   try {
     mkdirSync(harnessHome(), { recursive: true });
-    // the proxy address may carry `user:pass@`: the file is the owner's alone, like cloud.json and
-    // hands.json next to it (`mode` applies to a new file only, so an existing one is tightened too)
-    writeFileSync(prefsPath(), `${JSON.stringify(prefs, null, 2)}\n`, { mode: 0o600 });
-    chmodSync(prefsPath(), 0o600);
+    // The proxy address may carry `user:pass@`, so both the replacement and backup are private.
+    writePrivateJson(prefsPath(), next);
   } catch (exc) {
+    if (strict) throw exc;
     log(`prefs: could not save: ${String(exc)}`);
   }
 }
@@ -822,7 +832,7 @@ function writePrefs(): void {
 function showWindow(): BrowserWindow | null {
   if (!mainWindow && hostUrl) {
     mainWindow = createWindow();
-    void mainWindow.loadURL(hostUrl);
+    void loadHost(mainWindow, hostUrl);
   }
   if (!mainWindow) return null;
   if (mainWindow.isMinimized()) mainWindow.restore();
@@ -983,6 +993,17 @@ function registerBridge(): void {
   ipcMain.handle("nanomuse:relaunch", () => {
     relaunchNow();
   });
+  ipcMain.handle("nanomuse:updates:snapshot", () => windowsUpdates?.snapshot() ?? null);
+  ipcMain.handle("nanomuse:updates:auto-download", async (_e, enabled: boolean) => {
+    await windowsUpdates?.setAutoDownload(enabled);
+    return windowsUpdates?.snapshot() ?? null;
+  });
+  for (const action of ["check", "download", "restart"] as const) {
+    ipcMain.handle(`nanomuse:updates:${action}`, async () => {
+      await windowsUpdates?.[action]();
+      return windowsUpdates?.snapshot() ?? null;
+    });
+  }
   ipcMain.handle("nanomuse:permissions:settings", (_e, kind: PermissionKind | "files") => {
     if (process.platform === "darwin" && typeof kind === "string" && kind in PERMISSION_PANES) void shell.openExternal(PERMISSION_PANES[kind]);
   });
@@ -1013,10 +1034,6 @@ function registerBridge(): void {
         const { proxy: _drop, ...rest } = prefs;
         const url = validProxyUrl(patch.proxy);
         prefs = !patch.proxy.trim() ? rest : url ? { ...rest, proxy: url } : prefs;
-      }
-      if (Array.isArray(patch.relayHosts)) {
-        // the relay the plugin talks to, so a self-hosted one is on NO_PROXY as well
-        prefs = { ...prefs, relayHosts: patch.relayHosts.filter((h): h is string => typeof h === "string" && h.trim() !== "").slice(0, 8) };
       }
       writePrefs();
       applyPrefs();
@@ -1709,9 +1726,14 @@ function relaunchNow(): void {
     return;
   }
   if (relaunching) return;
-  relaunching = true;
-  app.relaunch();
-  app.quit();
+  if (!exitGuard) return;
+  void exitGuard.requestRestart("relaunch", () => {
+    relaunching = true;
+    app.relaunch();
+    app.quit();
+  }, true).then((accepted) => {
+    if (!accepted) relaunching = false;
+  });
 }
 
 let screenGrantWatch: NodeJS.Timeout | null = null;
@@ -1820,13 +1842,25 @@ function createWindow(): BrowserWindow {
     if (verdict === "external") void shell.openExternal(url);
   });
   win.webContents.session.setPermissionRequestHandler((_wc, permission, callback, details) => {
-    // the microphone for voice input, for the Host's page alone; nothing else is asked for
-    callback(permission === "media" && sameOrigin(details.requestingUrl, hostUrl));
+    // Dictation receives audio only. Video, mixed capture and cross-origin frames are denied.
+    const media = details as Electron.MediaAccessPermissionRequest;
+    callback(mediaPermissionAllowed(permission, details.requestingUrl, media.securityOrigin, media.mediaTypes, hostUrl));
   });
   win.on("closed", mainWindowClosed);
+  // Windows logoff/shutdown may close the last window without before-quit.
+  win.on("session-end", () => { sessionEnding = true; });
   // the splash: the logo in a loading ring and the wordmark (resources/loading.html) — no face
   void win.loadFile(join(ownResources(), "loading.html"), { query: { lang: zh ? "zh" : "en" } });
   return win;
+}
+
+/**
+ * Show the Host's web app in `win`, then drop the splash from the window's history: a back
+ * press (a mouse's side button too) would otherwise land on loading.html, which never moves on.
+ */
+async function loadHost(win: BrowserWindow, url: string): Promise<void> {
+  await win.loadURL(url);
+  if (!win.isDestroyed()) win.webContents.navigationHistory.clear();
 }
 
 async function boot(): Promise<void> {
@@ -1841,7 +1875,7 @@ async function boot(): Promise<void> {
   log(`ready: ${hostUrl.replace(/token=\S+/, "token=…")}`);
   // the work routes the protected exit asks at quit time (an old plugin answers nothing usable)
   hostWork = new HostWork(hostUrl, { log });
-  await mainWindow?.loadURL(hostUrl);
+  if (mainWindow) await loadHost(mainWindow, hostUrl);
   if (screenshotFlag && mainWindow) {
     // the web app loads its plugins after the document; give it a moment
     await new Promise((r) => setTimeout(r, 8000));
@@ -1999,6 +2033,30 @@ if (!app.requestSingleInstanceLock({ version: app.getVersion() })) {
     if (!screenshotFlag) void ensureMacPermissionsAtLaunch().catch((exc: unknown) => log(`permissions: ${String(exc)}`));
     try {
       await boot();
+      if (process.platform === "win32" && process.arch === "x64" && app.isPackaged && !screenshotFlag) {
+        windowsUpdates = new WindowsUpdates({
+          currentVersion: app.getVersion(), supported: true,
+          autoDownload: prefs.autoDownloadUpdates !== false,
+          saveAutoDownload: (enabled) => {
+            const next = { ...prefs, autoDownloadUpdates: enabled };
+            writePrefs(next, true);
+            prefs = next;
+          },
+          networkCost: windowsNetworkCost,
+          createUpdater: (canQuit) => {
+            const updater = new RestartNsisUpdater(canQuit);
+            updater.logger = { info: (line) => log(`update: ${line}`), warn: (line) => log(`update: ${line}`), error: (line) => log(`update: ${line}`) };
+            return updater;
+          },
+          handoff: async (intent, install) => !quitting && !sessionEnding && !!exitGuard && exitGuard.requestExit(intent, install ? () => {
+            if (quitting || sessionEnding) throw new Error("The system is ending the session");
+            install();
+          } : undefined),
+          cancelHandoff: async () => { await exitGuard?.cancelHandoff(); },
+        });
+        windowsUpdates.subscribe((state) => { mainWindow?.webContents.send("nanomuse:updates:state", state); });
+        windowsUpdates.start();
+      }
     } catch (exc) {
       await reportStartupFailure(exc);
       app.quit();
@@ -2019,9 +2077,9 @@ if (!app.requestSingleInstanceLock({ version: app.getVersion() })) {
     globalShortcut.unregisterAll();
     if (quitting) return;
     quitting = true;
-    // The record the install-on-exit change will read: a quit that did not go through the
-    // protected exit (a crash, the system switching off, a Host that never came up) is not
-    // the person approving an installation.
+    windowsUpdates?.dispose();
+    // This cleanup never requests installation. Only the explicit protected
+    // quit or restart above can hand a verified package to the installer.
     log(`quit: the exit ${exitGuard?.approval === "user" ? "went through the protected exit with the person's say-so" : "did not go through the protected exit (the system, a crash, or a Host that was not up)"}`);
     if (startWatch) {
       // a Host still starting goes with the app; the log says it was alive

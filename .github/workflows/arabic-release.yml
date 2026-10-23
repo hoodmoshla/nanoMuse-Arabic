@@ -36,10 +36,6 @@ on:
         description: "Create the tag and the GitHub release (uncheck to only build and verify)"
         type: boolean
         default: true
-  pull_request:
-    types: [closed]
-    branches: ["codex/arabic-standalone-phase2"]
-
 concurrency:
   group: arabic-release
   cancel-in-progress: false
@@ -54,26 +50,22 @@ env:
   # branch was dispatched: the Actions page remembers the last one somebody picked, and a run
   # started from `main` would otherwise build that tree, find no scripts/arabic-release-apk.sh and
   # stop — or worse, find an older one.
-  ARABIC_BRANCH: update/v1.0.5-arabic
+  ARABIC_BRANCH: main
 
 jobs:
   release:
     name: build · verify · publish
-    # By hand always; by itself only when the merged pull request came from the sync branch, so a
-    # documentation change to this branch does not publish an app.
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.pull_request.merged == true &&
-       startsWith(github.event.pull_request.head.ref, 'upstream/'))
+    # Manual only, and always from main. A pull_request event must not reach this job:
+    # an earlier closed-PR path built github.sha and could publish from that commit.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     steps:
       - uses: actions/checkout@v7
         with:
-          # The Arabic branch's tree for a dispatch; the merge commit for the run this workflow
-          # starts on its own when a sync pull request is merged, where that exact commit is what
-          # is being released.
-          ref: ${{ github.event_name == 'pull_request' && github.sha || env.ARABIC_BRANCH }}
+          # The published edition is main, not the branch remembered by the Actions page
+          # and not the commit of a pull request event.
+          ref: main
           submodules: recursive # android/deps/proot, the sandbox inside the APK
           fetch-depth: 0 # the tag is created from this checkout and points at it
 
@@ -165,6 +157,13 @@ jobs:
           set -euo pipefail
           args=()
           if [ -n "${{ inputs.revision }}" ]; then args+=(--revision "${{ inputs.revision }}"); fi
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            echo "::notice::a pull_request event never publishes, even when the publish input is true"
+            echo "event=$EVENT_NAME publish input='${PUBLISH_INPUT:-<unset>}' → publish=false"
+            echo "running: scripts/arabic-release-apk.sh ${args[*]:-(no arguments)}"
+            bash scripts/arabic-release-apk.sh "${args[@]}"
+            exit 0
+          fi
           # Asked in bash rather than in an expression: `inputs.publish` is a boolean, and
           # comparing it with the string 'true' compared the number 1 with NaN. See
           # scripts/should-publish.sh for the whole of it.

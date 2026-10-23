@@ -91,7 +91,7 @@ The same presets are offered in the web console (*Connections → Chat model*, a
 ```toml
 [llm]
 provider = "chatgpt"     # the sign-in from `nanomuse chatgpt login`; no base_url, no api_key
-model    = ""            # empty → gpt-5.6-sol (also gpt-5.4, gpt-5.4-mini)
+model    = ""            # empty → gpt-5.6-sol (also gpt-6.1-sol, gpt-6-sol, gpt-6-luna, gpt-6-astra, gpt-5.4, gpt-5.4-mini)
 ```
 
 A person with a ChatGPT plan (Plus, Pro, Team) can let nanoMuse use it for chat and for the hands, the way OpenAI's own Codex CLI does: `nanomuse chatgpt login` opens OpenAI's sign-in page in the browser (PKCE, the same client id, scopes and redirect as Codex), waits for the callback on port 1455 of the machine the runtime runs on, and stores the tokens in `<data_dir>/chatgpt.json` (mode 0600), refreshed before they expire. `nanomuse chatgpt status` says who is signed in and until when (never the tokens); `nanomuse chatgpt logout` deletes the store. The same three steps are on the web console's *Connections* screen (*Or sign in with a ChatGPT plan*), which calls `POST /api/chatgpt/login`, `GET /api/chatgpt/status` and `POST /api/chatgpt/logout` on the runtime ([web.md](web.md)). After a sign-in nothing switches by itself: set `provider = "chatgpt"` here, pick *Use it for the chat* on the web, or `PUT /api/connections/llm {"provider": "chatgpt"}`. `[gui] provider = "chatgpt"` works the same way for the hands.
@@ -137,7 +137,7 @@ Models that emit `<think>…</think>` inside the content are handled: the reason
 
 ## `[image]` and `[video]`
 
-Where the avatar studio's pictures and the avatar's clips come from when it is not the chat model's host. Both slots empty (the default) follows one order (the Models contract, 0.1.41): the chat provider's own picture model when it has one (the account's relay, Alibaba Cloud Bailian, and any catalogue provider with `image`: its `defaults.image`; `[llm] image_model` / `video_model` still name another), else the account's relay when you are signed in to nanoMuse Cloud, even while the chat model is elsewhere, else nothing. Clips the same way: the picture host when it speaks the video API, else the relay under the account key when signed in. Set a slot to draw somewhere else, or to draw at all when the chat model is DeepSeek, a ChatGPT plan or a local model and you are not signed in:
+Where the avatar studio's pictures and the avatar's clips come from when it is not the chat model's host. Both slots empty (the default) follow one order (the Models contract, 0.1.41): the chat provider's own media model when it has one (any catalogue provider with `image` / `video`, using its corresponding default; `[llm] image_model` / `video_model` still name another), then a signed-in relay only when its live menu explicitly offers that media kind, then the first provider of your own that does. The public nanoMuse Cloud menu offers no image- or video-generation model, so its users need a provider and API key of their own; an operator of a self-hosted relay may deliberately enable its legacy media proxy. Set a slot to draw somewhere else, or to draw at all when the chat model is DeepSeek, a ChatGPT plan or a local model:
 
 ```toml
 [image]
@@ -177,6 +177,8 @@ With `language = "auto"` the system prompt names the reply language and tells th
 
 `max_context_images` is for the hands. A run on a screen appends a screenshot per step and the whole conversation goes up again on every step, so a dozen full-size pictures had passed the relay's body limit (413 `too_large`, 0.1.37). Only the newest four travel now, each downscaled to at most two megapixels; the older ones are replaced by a one-line note so the model still knows a screenshot was there. The desktop app's harness keeps the same budget on its side.
 
+`max_context_messages` trims older history at a user-message boundary when possible. If a single turn fills the window, the runtime keeps the newest messages plus the complete tool exchange at the cutoff. This can exceed the configured message count by the messages needed to retain that exchange. Stored conversation history is unchanged.
+
 ## `[sync]`
 
 ```toml
@@ -201,7 +203,7 @@ remote_control = true
 name = ""            # empty: the host name
 ```
 
-`[cloud]` is the relay this runtime signs in to ([cloud.md](cloud.md)): `base_url` is its public address (your own relay's, after [self-hosting.md](self-hosting.md)); `required = false` lets the first run finish without an account, for a runtime that uses no relay at all; `sync` is the default of the account-wide *Data controls → Sync* switch, and the person's choice, once made, is what counts; `models = false` (the console's *Use nanoMuse Cloud models* switch, kept in app-settings) takes the account's models out of the automatic order of the hands, pictures and clips and out of the providers' listing while the sign-in stays, so nothing spends the allowance but an explicit *Use nanoMuse Cloud this time*. The account key itself is `NANOMUSE_CLOUD_KEY` in the vault.
+`[cloud]` is the relay this runtime signs in to ([cloud.md](cloud.md)): `base_url` is its public address (your own relay's, after [self-hosting.md](self-hosting.md)); `required = false` lets the first run finish without an account, for a runtime that uses no relay at all; `sync` is the default of the account-wide *Data controls → Sync* switch, and the person's choice, once made, is what counts; `models = false` (the console's *Use nanoMuse Cloud models* switch, kept in app-settings) takes every model advertised by that relay out of the automatic order and the providers' listing while sign-in stays, so nothing spends the allowance but an explicit *Use nanoMuse Cloud this time*. The public nanoMuse Cloud currently advertises chat and GUI models only; pictures and clips require a provider you add yourself. A self-hosted relay may advertise different capabilities. The account key itself is `NANOMUSE_CLOUD_KEY` in the vault.
 
 `[hub]` is this computer as one of the account's devices ([hub.md](hub.md)): `enabled` joins the hub whenever the account is signed in; `remote_control = false` answers other devices with `info` and nothing else; `name` is what the other devices call this one (empty: the host name). `device_id` is per installation and written by the app.
 
@@ -325,12 +327,12 @@ Besides the sources there is always *My contacts*, `<data_dir>/contacts.vcf`: th
 
 ### Web search
 
-Who answers `web_search`. DuckDuckGo needs nothing and is the default, but it is scraped rather than served: it rate-limits and breaks now and then. For searches that always work, name a provider with an API: [Brave Search](https://brave.com/search/api/) or [Tavily](https://app.tavily.com/) with a key, [You.com](https://you.com/platform/api-keys) with or without one, or a [SearXNG](https://docs.searxng.org/) instance you run yourself (with `json` among its `search.formats`). The same choice is on the phone under *Connections → Web search*, where the key goes to the vault as `SEARCH_API_KEY` and *Test* runs one search.
+Who answers `web_search`. DuckDuckGo needs nothing and is the default, but it is scraped rather than served: it rate-limits and breaks now and then. For searches that always work, name a provider with an API: [Brave Search](https://brave.com/search/api/), [Tavily](https://app.tavily.com/) or [Serply](https://serply.io/) (for Google results) with a key, [You.com](https://you.com/platform/api-keys) with or without one, or a [SearXNG](https://docs.searxng.org/) instance you run yourself (with `json` among its `search.formats`). The same choice is on the phone under *Connections → Web search*, where the key goes to the vault as `SEARCH_API_KEY` and *Test* runs one search.
 
 ```toml
 [connectors.search]
-provider = "duckduckgo"          # duckduckgo | brave | tavily | you | searxng
-api_key  = "{{vault:SEARCH_API_KEY}}"   # brave / tavily, and you if you have one: nanomuse vault set SEARCH_API_KEY
+provider = "duckduckgo"          # duckduckgo | brave | tavily | serply | you | searxng
+api_key  = "{{vault:SEARCH_API_KEY}}"   # brave / tavily / serply, and you if you have one: nanomuse vault set SEARCH_API_KEY
 base_url = ""                    # searxng: your instance, e.g. "http://127.0.0.1:8080"
 fallback = true                  # false: a failed search fails instead of going to DuckDuckGo
 ```
@@ -397,7 +399,7 @@ reconnect_grace_s = 30.0             # how long a running task waits for a phone
 sensitive_words  = ["确认支付", "立即付款", "转账", "提交订单", "发送", "删除", "pay now", "place order", "send", "delete"]  # a tap on these asks first; a shortened sample, the default has 22 words
 ```
 
-`base_url` and `api_key` fall back to `[llm]` when empty. An empty `model` follows one order (the Models contract, 0.1.41): with the relay as the chat model, the relay's hands model (`qwen3.8-27b` unless `/v1/models` names another), not the chat model (the chat default reads pictures, but the hands want the model trained to point at things on a screen); with an own provider the catalogue lists with `vision`, that provider's own hands model (`defaults.hands`, `qwen3.8-27b` on Bailian, `glm-4.6v` on Zhipu) on the chat key; with a provider that cannot see (a local server by its catalogue id or host) and an account signed in, the relay's hands model under the account key, the chat model staying where it is; else the chat model, as on a host the catalogue does not list. An explicit `model` always wins. A key is only needed when the operator's `base_url` is a different service. Traces of every phone task go to `<data_dir>/phone-traces/` (the last 200 are kept; `nanomuse phone traces`).
+`base_url` and `api_key` fall back to `[llm]` when empty. An empty `model` follows one order (the Models contract, 0.1.41): with the relay as the chat model, the model that `/v1/models` recommends for `gui` (the public Cloud currently recommends `Qwen/Qwen3.6-27B-FP8`, the same multimodal model it uses for chat); with an own provider the catalogue lists with `vision`, that provider's own hands model (`defaults.hands`, `qwen3.8-27b` on Bailian, `glm-4.6v` on Zhipu) on the chat key; with a provider that cannot see (a local server by its catalogue id or host) and an account signed in, the relay's hands model under the account key, the chat model staying where it is; else the chat model, as on a host the catalogue does not list. An explicit `model` always wins. A key is only needed when the operator's `base_url` is a different service. Traces of every phone task go to `<data_dir>/phone-traces/` (the last 200 are kept; `nanomuse phone traces`).
 
 The app layer sets this slot through `PUT /api/connections/gui`, which takes `provider` as `PUT /api/connections/llm` does: a protocol (`openai`, `openai_responses`), `chatgpt`, or a catalogue id such as `bailian`, which brings its endpoint along (`base_url` may stay empty); an id the catalogue lacks, or one whose protocol the runtime does not speak, is 400 with the choices. The answer (and `GET /api/connections` → `gui`) carries `provider` as set, `provider_id` (the catalogue entry a protocol plus URL stands for), `effective_model` and `effective_source` (`gui`, `chat` or `cloud`).
 
@@ -456,6 +458,10 @@ that failed, as when the runtime came up before its network, is tried again afte
 the version under *Settings → About* with a link to the release page; nothing is downloaded and
 nothing about the install is sent beyond the runtime's version in the request's `User-Agent`. `NANOMUSE_NO_UPDATE_CHECK=1` turns it off too, and a hosted
 web session (a runtime started with `NANOMUSE_CLOUD_KEY`) never checks; its operator updates it.
+
+These settings apply to the Python runtime. The Windows desktop shell checks separately
+after startup and every six hours. Its saved automatic download switch is on by default,
+but metered or unknown networks wait for a manual download. See [desktop.md](desktop.md#updating-on-windows).
 
 ## Where things live
 

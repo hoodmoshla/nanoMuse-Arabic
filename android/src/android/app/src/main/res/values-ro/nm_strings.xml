@@ -337,6 +337,16 @@
     <string name="nm_avatar_retry">Reîncearcă</string>
     <string name="nm_avatar_describe_title">Descrie o față nouă</string>
     <string name="nm_avatar_describe_body">O propoziție e de ajuns: ce este, ce poartă, ce stare transmite. Alege un stil, iar modelul tău de imagine desenează patru variante din care să alegi.</string>
+    <string name="nm_avatar_preset_moss_name">Curierul de mușchi</string>
+    <string name="nm_avatar_preset_moss_description">un curier mic acoperit cu mușchi, cu urechi ca frunzele și o geantă simplă din pânză</string>
+    <string name="nm_avatar_preset_tide_name">Meșterul mareelor</string>
+    <string name="nm_avatar_preset_tide_description">un axolotl meșter verde-spumă, cu branhii coral și o borsetă simplă pentru unelte</string>
+    <string name="nm_avatar_preset_dusk_name">Molia amurgului</string>
+    <string name="nm_avatar_preset_dusk_description">o molie indigo gânditoare, cu pete piersicii pe aripi, guler crem și ochelari rotunzi</string>
+    <string name="nm_avatar_preset_copper_name">Ghinda de cupru</string>
+    <string name="nm_avatar_preset_copper_description">un automat mic din cupru în formă de ghindă, cu panouri verde salvie și fular albastru estompat</string>
+    <string name="nm_avatar_preset_a11y">Opțiunea %1$d: %2$s, %3$s</string>
+    <string name="nm_avatar_preset_ai">Inspirație generată de AI</string>
     <string name="nm_avatar_default_description">Un pui de dragon dolofan, galben-pal, cu coarne mici portocalii și aripi mici strânse</string>
     <string name="nm_avatar_style_flat">Plat</string>
     <string name="nm_avatar_style_clay">Lut 3D</string>
@@ -363,6 +373,8 @@
     <string name="nm_own_clip_choose">Alege un clip</string>
     <string name="nm_own_clip_replace">Înlocuiește clipul</string>
     <string name="nm_own_clip_default">Fața implicită</string>
+    <!-- The per-mood row of the own clip: takes that mood's clip away, the others stay -->
+    <string name="nm_own_clip_mood_remove">Elimină</string>
     <string name="nm_own_clip_menu">Clipul tău…</string>
     <string name="nm_own_clip_preview_title">Previzualizare</string>
     <string name="nm_own_clip_preview_body">Așa rulează ca față: fără sunet, în buclă, decupat în cerc.</string>
@@ -1119,7 +1131,6 @@
     <string name="nm_cloud_provider_no_delete">Acest furnizor este contul tău nanoMuse Cloud. Oprește-l mai sus ca să nu-i mai folosești modelele; pentru deconectare, deschide Setări › nanoMuse Cloud.</string>
     <string name="nm_welcome_own_key">Folosește propria cheie API</string>
     <string name="nm_useit_title">La ce să o folosești</string>
-    <string name="nm_useit_body">Alege de ce să se ocupe această cheie. De restul se ocupă în continuare nanoMuse Cloud.</string>
     <string name="nm_useit_body_signed_out">Alege de ce să se ocupe această cheie.</string>
     <string name="nm_useit_use">Folosește</string>
     <string name="nm_useit_not_now">Nu acum</string>

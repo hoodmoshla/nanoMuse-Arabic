@@ -34,7 +34,7 @@ permissions:
 env:
   # The branch the Arabic edition lives on, and the base of every sync pull request. Change it
   # here when that work moves.
-  ARABIC_BRANCH: update/v1.0.5-arabic
+  ARABIC_BRANCH: main
   UPSTREAM: nano-muse/nanoMuse
 
 jobs:

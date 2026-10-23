@@ -45,6 +45,12 @@ export const MOOD_INSTRUCTIONS: Record<string, string> = {
 const MOODS = ['working', 'waiting', 'happy', 'error']
 const STILL_PX = 512
 const STILL_BYTES = 190 * 1024
+const PRESETS = [
+  { id: 'moss-courier', name: 'presetMossName', description: 'presetMossDescription', style: 'muse' },
+  { id: 'tide-tinker', name: 'presetTideName', description: 'presetTideDescription', style: 'clay' },
+  { id: 'dusk-moth', name: 'presetDuskName', description: 'presetDuskDescription', style: 'watercolor' },
+  { id: 'copper-acorn', name: 'presetCopperName', description: 'presetCopperDescription', style: 'line' },
+] as const
 
 export function buildPrompt(description: string, index: number, style: string): string {
   const subject = description.trim().replace(/[.。!！,，]+$/, '')
@@ -219,6 +225,20 @@ export function AvatarStudioSheet({ t, initial, style: initialStyle, onClose }: 
     const noImage = Boolean(estimateError) && providers.view !== undefined && !providers.view.capabilities.includes('image')
     body = h('form', { id: 'nm-studio', className: 'nm-sheet-form', onSubmit: (e: FormEvent) => { e.preventDefault(); draw(false) } },
       h('p', { className: 'nm-sheet-lead' }, t('stLead')),
+      h('div', { className: 'nm-st-preset-ai' }, t('stPresetAI')),
+      h('div', { className: 'nm-st-grid', role: 'list' }, PRESETS.map((preset, index) =>
+        h('button', {
+          key: preset.id,
+          type: 'button',
+          role: 'listitem',
+          className: `nm-st-cell${text === t(preset.description) ? ' nm-active' : ''}`,
+          'aria-label': t('stPresetOption', { n: index + 1, name: t(preset.name), style: t(`style_${preset.style}` as Words) }),
+          onClick: () => { setText(t(preset.description)); setStyle(preset.style) },
+        }, h('img', {
+          src: `nanomuse/assets/preset-${preset.id}.webp`,
+          alt: '',
+        }), h('span', { className: 'nm-st-preset-name' }, t(preset.name)),
+        h('span', { className: 'nm-st-preset-style' }, t(`style_${preset.style}` as Words))))),
       h('textarea', { className: 'nm-textarea', rows: 3, value: text, placeholder: t('stPlaceholder'), maxLength: 200, onChange: (e: FormEvent<HTMLTextAreaElement>) => setText(e.currentTarget.value), 'data-modal-autofocus': true }),
       h('div', { className: 'nm-st-label' }, t('stStyle')),
       styleChips,
@@ -239,8 +259,16 @@ export function AvatarStudioSheet({ t, initial, style: initialStyle, onClose }: 
         h('div', { className: 'nm-st-label' }, t('ocTitle')),
         h('p', { className: 'nm-fine nm-oc-body' }, live.ownClip ? t('ocOn') : t('ocBody')),
         h('div', { className: 'nm-oc-row' },
-          h('button', { type: 'button', className: 'nm-pill nm-pill-ghost nm-pill-sm', disabled: clipChooser.busy, onClick: clipChooser.choose }, live.ownClip ? t('ocReplace') : t('ocChoose')),
+          h('button', { type: 'button', className: 'nm-pill nm-pill-ghost nm-pill-sm', disabled: clipChooser.busy, onClick: () => clipChooser.choose() }, live.ownClip ? t('ocReplace') : t('ocChoose')),
           live.ownClip ? h('button', { type: 'button', className: 'nm-pill nm-pill-ghost nm-pill-sm', onClick: () => void call('own-clip/clear', {}).catch(() => undefined) }, t('ocDefault')) : null),
+        h('p', { className: 'nm-fine nm-oc-body' }, t('ocMoodIntro')),
+        (['idle', 'working', 'waiting', 'happy', 'error'] as const).map((mood) =>
+          h('div', { key: mood, className: 'nm-oc-row' },
+            h('span', { style: { flex: 1 } }, mood === 'error' ? t('ocMoodError') : t(({ idle: 'moMoodIdle', working: 'moMoodWorking', waiting: 'moMoodWaiting', happy: 'moMoodHappy' } as const)[mood])),
+            h('button', { type: 'button', className: 'nm-pill nm-pill-ghost nm-pill-sm', disabled: clipChooser.busy, onClick: () => clipChooser.choose(mood) }, live.ownClips?.[mood] ? t('ocReplace') : t('ocChoose')),
+            live.ownClips?.[mood]
+              ? h('button', { type: 'button', className: 'nm-pill nm-pill-ghost nm-pill-sm', onClick: () => void call('own-clip/clear', { mood }).catch(() => undefined) }, t('ocMoodDefault'))
+              : null)),
         h('p', { className: 'nm-fine nm-oc-body' }, t('ocLocal'))))
     footer = h('div', { className: 'nm-sheet-actions' },
       h('span', { style: { flex: 1 } }),
@@ -254,8 +282,9 @@ export function AvatarStudioSheet({ t, initial, style: initialStyle, onClose }: 
           image ? h('img', { src: `data:image/png;base64,${image}`, alt: t('stOption', { n: index + 1 }) }) : h('span', { className: 'nm-st-wait' }, busy ? '…' : '—'),
           h('span', { className: 'nm-st-tag' }, t('stOption', { n: index + 1 }))))),
       error ? h('div', { className: 'nm-room-error' }, error) : null,
-      // an own provider failed and the account could draw: this round through nanoMuse Cloud, the slot untouched
-      error && !busy && !viaCloud && estimate?.source === 'provider' && live.cloud.signedIn
+      // An own provider failed and this relay actually lists an image model: this round
+      // through that relay, the slot untouched. A hosted account alone is not a fallback.
+      error && !busy && !viaCloud && estimate?.source === 'provider' && live.cloud.signedIn && providers.view?.cloud.capabilities.includes('image')
         ? h('div', { style: { marginTop: 6 } }, h('button', { type: 'button', className: 'nm-pill nm-pill-ghost nm-pill-sm', 'data-testid': 'nm-st-cloud-once', onClick: () => draw(true) }, t('rfUseCloudOnce')))
         : null)
     footer = h('div', { className: 'nm-sheet-actions' },
