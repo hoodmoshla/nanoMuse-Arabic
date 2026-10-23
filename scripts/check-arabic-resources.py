@@ -176,12 +176,17 @@ def check_keys(reference: dict[str, Resource], target: dict[str, Resource], labe
     # locale copies them, so Arabic must not carry them either.
     required = {name for name, res in reference.items() if res.translatable}
     missing = sorted(required - set(target))
-    forbidden = sorted(name for name, res in reference.items() if not res.translatable and name in target)
+    forbidden = sorted(
+        name for name, res in reference.items() if not res.translatable and name in target
+    )
     extra = sorted(set(target) - set(reference))
     if missing:
         fail(label, f"{len(missing)} key(s) English has and Arabic does not: {missing[:12]}")
     if forbidden:
-        fail(label, f"{len(forbidden)} key(s) English marks translatable=false but Arabic copies: {forbidden[:12]}")
+        fail(
+            label,
+            f"{len(forbidden)} key(s) English marks translatable=false but Arabic copies: {forbidden[:12]}",
+        )
     if extra:
         fail(label, f"{len(extra)} key(s) Arabic has and English does not: {extra[:12]}")
 
