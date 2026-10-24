@@ -906,4 +906,3 @@ test('a sync frame arriving while a pull is in flight triggers a follow-up pull,
   )
   e.stop()
 })
-
