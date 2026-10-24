@@ -188,15 +188,21 @@ def test_the_alpine_detection_tells_a_gzip_from_a_tar(tmp_path: Path) -> None:
         ("workflow_dispatch", "True", "true"),
         ("workflow_dispatch", "false", "false"),
         ("workflow_dispatch", "", "false"),
-        ("pull_request", "", "true"),
-        ("pull_request", "false", "true"),
+        ("pull_request", "", "false"),
+        ("pull_request", "false", "false"),
+        ("pull_request", "true", "false"),
+        ("pull_request", "True", "false"),
     ],
 )
 @needs_bash
 def test_the_publish_decision(event: str, value: str, expected: str) -> None:
-    """Run #5 built, signed, verified a real APK and published nothing, because the decision was
-    asked in a GitHub expression: `inputs.publish` is a boolean for a `type: boolean` input, and
-    `inputs.publish == 'true'` compares the number 1 with NaN. The shell answers it now."""
+    """A pull request never publishes, even when the input says true or is empty.
+
+    A verify run on a pull request created tag v1.0.6.1 because this decision used
+    to treat every `pull_request` event as a request to publish, and the absent
+    `--publish` flag never reached the script. An empty input and an explicit
+    `true` are both refused here so that path cannot return.
+    """
     result = subprocess.run(
         [BASH or "bash", str(DECIDER), event, value], capture_output=True, text=True, check=False
     )
@@ -210,6 +216,16 @@ def test_the_workflow_asks_that_script_and_shows_what_it_decided() -> None:
     assert "inputs.publish == 'true'" not in text, (
         "a boolean dispatch input is being compared with the string 'true'"
     )
+    assert "pull_request:" not in text.split("on:", 1)[1].split("jobs:", 1)[0], (
+        "a pull_request event can start the Arabic release workflow"
+    )
+    assert "github.event.pull_request" not in text, (
+        "a closed pull request can still reach the release job"
+    )
+    assert "github.ref == 'refs/heads/main'" in text, "a dispatch can publish from another branch"
+    assert "ref: main" in text, "the release checkout can build a pull request commit"
+    commands = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+    assert "github.sha" not in commands, "the release checkout follows the event commit"
     # The summary must read the value the build actually used, not the input again, or it can
     # report a publication that did not happen.
     assert "steps.release.outputs.publish" in text

@@ -57,8 +57,8 @@ IOS = ROOT / "android" / "src" / "ios"
 APP_ID = "io.github.nanomuse.arabic"
 NAME = "nanoMuse"
 LABEL = "nanoMuse-Arabic"
-VERSION_NAME = "1.0.5"
-VERSION_CODE = 48
+VERSION_NAME = "1.0.6"
+VERSION_CODE = 49
 # This edition's repository: the update check reads it and the About rows link to
 # it. Never upstream's — that feed carries the English app, signed with a key this
 # build does not share.
@@ -660,7 +660,12 @@ def check() -> int:
         if REPO not in feed:
             print(f"  ! UpdateCheck.kt does not read {REPO}")
             problems += 1
-        if "nanomuse.cn" in feed or "nano-muse/nanoMuse" in feed:
+        # A mention inside a comment explaining why the feed is ours is fine;
+        # an actual URL or repo path in code is the update reading the wrong app.
+        feed_code = "\n".join(
+            line for line in feed.splitlines() if not line.lstrip().startswith(("*", "//"))
+        )
+        if "nanomuse.cn" in feed_code or "nano-muse/nanoMuse" in feed_code:
             print("  ! UpdateCheck.kt still points at upstream's release feed")
             problems += 1
     for path in sorted(RES.glob("values*/strings.xml")):

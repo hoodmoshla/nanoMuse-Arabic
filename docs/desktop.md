@@ -30,6 +30,44 @@ Python runtime and the web app in an Electron shell of their own (`desktop/app`)
 harness build shipped beside them as *nanoMuse Harness*; from 0.1.30 there is the one
 desktop, and it installs over the old one (same application id).
 
+## Updating on Windows
+
+The Windows x64 app checks for a newer stable release after starting and every six
+hours. Settings shows the running app's version and the same update state as the
+corner menu, with **Check now** to refresh immediately.
+
+Updates download in the background by default when Windows reports an unmetered
+internet connection. **Download updates automatically** in Settings saves your choice
+across restarts. Switching it off stops new automatic downloads, while a download
+already running can finish. Checks continue on metered or unknown networks; the menu
+explains the pause and **Download** overrides it for that request without changing the switch.
+The menu shows download progress and verification, then **Restart to update** once
+electron-updater has verified the complete installer. A dot means an action is
+waiting: download, retry or restart. Downloading has no update dot, and completion
+does not open a dialog. Failed checks and downloads can be retried from the menu.
+After a failed download, automatic retries wait one minute, then five minutes, with
+at most two retries. Each one rechecks your switch and Windows' network cost. After
+that, the app waits for a manual retry or the next six-hour check; turning automatic
+downloads off also prevents those later checks from starting a download.
+The download mirror is tried first, then GitHub for the same version and checksum.
+An already downloaded installer is verified again before reuse.
+
+Restarting for an update uses the installed app's normal user-level NSIS upgrade.
+It keeps conversations, settings and account data outside the application files,
+then opens the app again. If replies, computer operations, remote tasks or approvals
+are pending, the app lists them and defaults to keeping them running. Only an
+explicit confirmation ends the work; installation waits until it has ended and
+blocks new work during handoff. A cancelled or failed handoff lets work continue.
+
+On the next normal quit, an already verified update is installed with the same
+work protection, then the app stays closed. Without a ready update, quit follows
+the normal protected exit. Closing to the tray, leaving the app idle, a crash or
+system shutdown does not request installation. Other platforms, older shells and
+the standalone harness retain the external download flow. A version that has no
+in-app updater must first be upgraded with the downloaded installer. Development
+builds do not run an installer. This uses the existing installation behaviour;
+mixed copies or stale installation registration need to be sorted out separately.
+
 ## What it is
 
 A dsh Host started by the shell as a child process, showing the harness's web app in a
@@ -40,7 +78,8 @@ over the harness's approvals, the trajectory of a hands run in the chat (each st
 screenshot with the action drawn on it and the agent's words, to look back at during
 and after the run), the profile panel with memory,
 the Settings pages (Connectors, Computer use, File system access, Dictation,
-Permissions, Data controls with export and reset), the full-window first run. The agent
+Permissions, Data controls with export and reset), a search box in the nav to
+find a setting by the words on it, the full-window first run. The agent
 is dsh's (its agent loop, tools, skills, goals, plan mode, compaction, sub-agents, MCP),
 speaking as nanoMuse through the `nanomuse` preset, with:
 
@@ -82,7 +121,7 @@ speaking as nanoMuse through the `nanomuse` preset, with:
   tools `devices`, `device_screen`, `device_shell`, `device_files`, `device_open`,
   `device_notify` and `delegate` for the phone and the other computers; the phone's
   `delegate` landing here as a dsh session "From <device>" with its approvals relayed
-  back; remote control (`shell`, `files`, `open`, `screen`) behind a switch;
+  back, and its text sent while the model writes it when the asker asks (`stream`); remote control (`shell`, `files`, `open`, `screen`) behind a switch;
 - **Coding agents**: *Settings → Coding agents*, with this computer's Cursor, Codex,
   Claude Code and DeepSeek Harness chats (read from disk, a message starts the agent's own
   CLI, the run streams in with its tools, *Stop* ends it) and then the account's other computers',
@@ -98,7 +137,11 @@ speaking as nanoMuse through the `nanomuse` preset, with:
   Host's environment at start (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` for SOCKS, `NO_PROXY`
   with `localhost,127.0.0.1,::1`, `cloud.nanomuse.cn` and the relay the plugin talks to, and
   `NODE_USE_ENV_PROXY=1`, which is what makes Node's fetch read them), so it takes effect
-  after a restart; *Restart now* under the row restarts the Host with the window up. The
+  after a restart; *Restart now* under the row restarts the Host with the window up, and
+  asks first when a reply, the hands, a task from another device or an approval is under
+  way, as quitting does (the next bullet but one). A self-hosted relay is on
+  `NO_PROXY` when the shell was started with `NANOMUSE_CLOUD_URL`, the setting the plugin
+  reads too. The
   phones have the same setting in the provider form, the web app in the own-key form, the
   runtime in `[llm] proxy` ([own-key.md](own-key.md#when-the-provider-cannot-be-reached));
 - **Standing grants** (Settings → Permissions): every permission this computer remembers,
@@ -120,7 +163,9 @@ speaking as nanoMuse through the `nanomuse` preset, with:
   busy answer, so the asking device can send it again. Closing the window with the menu-bar
   switch on stays in the tray and has never been a quit. The routes are the plugin's
   `GET /nanomuse/cloud/work` (the aggregate), `POST /work/gate {open}` (the hand-over) and
-  `POST /work/stop` (the confirmed end).
+  `POST /work/stop` (the confirmed end). *Restart now* under the proxy row and the restart
+  macOS asks for after a Screen Recording grant go through the same question; the restart
+  of the helper alone does not touch the Host's work.
 
 ## When the allowance is used up, and the relay's other answers
 
@@ -189,6 +234,14 @@ a timeout on its side into the codes `unreachable` 503 and `timeout` 504).
 shows above the composer (what is left, the invite bonus, *See the ways*) once per pool
 size, as the phones show it in the chat and the web app above its composer.
 
+### Checking a packaged runtime
+
+After building the bundled runtime, `python scripts/desktop-app/build-runtime.py --check-only`
+starts it in an empty working directory and checks its health, web page and workspace location.
+The check chooses a free loopback port and captures startup logs in a temporary file. If the
+runtime is still not ready after 60 seconds, it reports the end of the log and stops the child
+process before removing the check's data directories.
+
 ## Config and data
 
 `~/.nanomuse/desktop` (`NANOMUSE_DESKTOP_HOME` moves it) is the app's dsh home: the
@@ -210,12 +263,19 @@ fixed preset row: a change under *Operating the screen* disposes the client and 
 hands call in flight finishes first). The file is removed when nothing is configured;
 `nanomuse/rooms.json` keeps the rooms (feed, goals with their steps and progress, which
 ideas were tried, the library index, memory).
+`desktop.json` is written to a temporary file beside it and swapped in, and the previous
+copy is kept as `desktop.json.bak`: a save that fails (a full disk, a crash) leaves the
+last good settings, and a damaged file is replaced from the copy at the next start. Both
+are readable by the owner alone, as the proxy address may carry a password. *Download your
+agent data* writes its zip one file at a time, leaves out links and anything over 64 MB,
+and removes a password from the proxy address in the `desktop.json` it packs.
 
 ## Models
 
 Settings → Models, right after General, is one row per thing a model does: *Chat*,
 *Operating the screen*, *Making pictures*, *Making clips*. Each picker lists nanoMuse Cloud
-first while you are signed in, its recommended model marked, then one group per provider
+first while you are signed in only when the relay's live menu covers that row, its
+lane-specific recommendation marked, then one group per provider
 you added under Settings → nanoMuse Cloud, each group holding only the models that can do
 that row's job (the screen needs a model that sees images; the hands speak OpenAI's shape,
 so an Anthropic or native Gemini key is named under the row but not listed). A row nothing
@@ -228,13 +288,18 @@ the lists hold more than eight models in all, a *Search models* field at the top
 every group by model id or name as you type (*No model matches* when nothing does). Esc
 or a click outside closes the panel; the same picker serves Settings → Media. The folding
 and the search live in `harness/dsh-nanomuse/src/client/model-list.ts`, checked by
-`tests/model-list.test.mjs`.
+`tests/model-list.test.mjs`. If you trim a provider's `models` catalog in the `llm-pi-ai`
+settings (or pass `catalogOnly: true` to `POST /nanomuse/cloud/providers/save`), the
+desktop keeps that trimmed chat model list in `cloud.json`, the model pickers, across
+restarts and across later key updates instead of merging the full `/models` list back in.
 
 What a row uses when you have not chosen: the provider new chats answer through, when it
 is one of your own and has a model for the job (its catalogue default); else nanoMuse
-Cloud while signed in; else the first of your providers that can. The three rows that
+Cloud while signed in only when its live menu offers the job; else the first of your
+providers that can. The hosted Cloud offers chat and screen operation, not media
+generation. The three rows that
 follow this order have *Automatic* as their first entry, with the row saying what it gives
-right now (*Currently nanoMuse Cloud · qwen3.8-27b*, say); pick it to drop a choice you
+right now (*Currently nanoMuse Cloud · Qwen/Qwen3.6-27B-FP8* for screen operation, say); pick it to drop a choice you
 made and let the row follow the order again. A chat pick is the default for new chats and
 moves the main chat with it (*Applies to the main chat and to new chats; a side chat keeps
 its model.*); a side chat keeps the model it was given, and the same pick twice writes
@@ -245,7 +310,8 @@ never left on a route no adapter serves, which showed as *no adapter registered 
 provider "custom"* on every new chat in 0.1.41. Pictures through your own key go straight to that provider (Model Studio's
 native image API, OpenRouter's image API, or the OpenAI shape for the rest) and nothing
 is billed to the account; the avatar studio says so in place of the cost line. Clips come
-from Model Studio only, through the account or your own Bailian key.
+from Model Studio through your own Bailian key (or a self-hosted relay whose operator
+explicitly enabled its legacy media proxy), never through the public hosted account.
 
 After you save a key, a small card asks *Use it for* with a toggle per thing the key can
 handle, all on; *Use it* switches those rows to that provider, *Not now* changes nothing.
@@ -253,7 +319,8 @@ When a model of your own fails under a turn, the card offers *Use nanoMuse Cloud
 time* while signed in: that one message is sent again through the account and the chat
 goes back to its model when the turn ends; the Models page stays as it was. *Use it* with
 chat ticked moves the main chat too. Nothing falls
-back on its own. The same button follows a failed studio round and a failed set of clips.
+back on its own. A failed studio round or clip set asks you to fix or choose a provider of
+your own; there is no hosted Cloud media retry.
 
 While signed in, the page starts with one switch, *Use nanoMuse Cloud models*. Off, the
 account's models leave every picker and the automatic order, the harness's side calls (a
@@ -275,6 +342,14 @@ to `Programs\nanomuse-desktop`, leaves a link pointing nowhere, and 0.1.39 could
 over it (`EEXIST: file already exists, symlink …` in `desktop.log`). Since 0.1.40 the stale
 link is removed as a link and remade; should that still fail, the message names the path to
 remove by hand.
+
+On Windows, read-only and workspace-write PowerShell commands run through DSH's restricted-token
+ACL sandbox. Because the Electron-hosted process has no console of its own, nanoMuse puts a
+short-lived Node-mode trampoline in front of that exact runner and gives it a windowless (or
+hidden fallback) console before the token is restricted. The PowerShell child inherits the
+console instead of failing during DLL initialization with `0xC0000142`, including after a
+temporary sandbox directory has been cleaned and recreated. The trampoline does not weaken the
+ACL policy and is not used for full-access commands.
 
 A first start can be slow, on Windows in particular. The Host prints its address only once
 every plugin of the profile has been loaded, and a fresh install has some 20 000 files under
@@ -453,6 +528,14 @@ TypeScript can change freely).
 
 ## macOS signing
 
+`scripts/desktop-app/package-mac.sh x64` packages `dist/mac`, and `arm64` packages
+`dist/mac-arm64`, even when both builds are present. A missing or ambiguous bundle,
+a failed inner Mach-O signature, or a failed app, helper or disk-image verification
+stops packaging with an error.
+
+The runtime staging step preserves PyInstaller's relative framework and library links.
+This keeps the framework layout intact when the app is copied and signed.
+
 Without an Apple developer certificate the bundle is ad-hoc signed and macOS asks once.
 With the repository secrets `MAC_CERT_P12_BASE64`, `MAC_CERT_PASSWORD`,
 `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID`, `APP_STORE_CONNECT_KEY_P8` and
@@ -471,7 +554,8 @@ first, as a bundle of its own (same identity, hardened runtime, its own identifi
 `io.github.nanomuse.desktop.computer-use`, none of the app's entitlements) and then the
 outer app. A local macOS build wants `build.sh` run before `npm run dist:dir`; without it
 electron-builder only warns that the source is missing and the app ships without the
-helper, on the pre-0.1.38 path.
+helper, on the pre-0.1.38 path. A Swift warning in the helper fails `build.sh`, as a
+warning in the iOS app fails its build: the helper is nanoMuse code.
 
 ## Linux notes
 

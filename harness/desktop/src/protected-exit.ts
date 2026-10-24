@@ -1,6 +1,6 @@
 /**
- * The protected exit: what runs between a person asking to quit (later, to
- * restart for an update) and the quit itself. One flow, one busy judgment, for
+ * The protected exit: what runs between a person asking to quit or restart
+ * for an update and the quit itself. One flow, one busy judgment, for
  * both: close the gate so no new work starts under the hand-over, ask before
  * ending what is running, with keeping it running as the default, and only
  * on an explicit confirmation end the work, wait for it to end, and complete
@@ -8,15 +8,15 @@
  *
  * Closing the window to stay in the tray, sitting idle, a crash and the system
  * switching off never come through here: they are not an exit request, and
- * `approval` stays `none` for them: the property a later install-on-exit
- * change must not talk itself out of. `approval` says only that the person
+ * `approval` stays `none` for them. `approval` says only that the person
  * confirmed this exit; it does not say the stop finished every piece of work.
- * When the stop's deadline or the rounds ran out with work still on, the log
- * carries "work still on after the stop": the install-on-exit change reads
- * that situation as the person having confirmed ending it, not as quiet.
+ * For ordinary quit, when the stop's deadline or the rounds ran out with work still on, the log
+ * carries "work still on after the stop" and the Host ends what remains.
+ * Either update installation requires acknowledged work state and a completed stop,
+ * and keeps the gate closed until installation takes over.
  */
 
-export type ExitIntent = "quit" | "restart-update";
+export type ExitIntent = "quit" | "restart-update" | "restart-host" | "relaunch";
 /** Whether the exit went through this flow with the person's explicit say-so. */
 export type ExitApproval = "none" | "user";
 
@@ -28,11 +28,11 @@ export interface WorkItem {
 
 export interface WorkSource {
   /** The work a real exit would end, over every source the Host aggregates. */
-  busy(): Promise<WorkItem[]>;
+  busy(strict?: boolean): Promise<WorkItem[]>;
   /** Open or close the gate: closed, new work is refused until it opens again. */
-  setGate(open: boolean): Promise<void>;
+  setGate(open: boolean, strict?: boolean): Promise<void>;
   /** End the work in progress; resolves once it has ended. */
-  stopAll(): Promise<void>;
+  stopAll(strict?: boolean): Promise<void>;
 }
 
 export interface ExitDialog {
@@ -83,12 +83,13 @@ export class ProtectedExit {
    * named and, unless the person keeps running, ended and waited for. True
    * when the exit proceeds, `finish` has run by then.
    */
-  async requestExit(intent: ExitIntent): Promise<boolean> {
+  async requestExit(intent: ExitIntent, install?: () => void): Promise<boolean> {
     if (this.phase !== "idle") {
       this.options.log(`exit: a request is already under way (${intent})`);
       return false;
     }
     this.phase = "handoff";
+    if (install || intent === "restart-update") return this.installHandoff(intent, install);
     try {
       await this.attempt(this.options.work.setGate(false), "closing the gate");
       let items = await this.busyNow();
@@ -120,6 +121,98 @@ export class ProtectedExit {
     } finally {
       this.phase = "idle";
     }
+  }
+
+  /**
+   * Restart a component with the work protected, the tolerant way of a quit: the gate
+   * closes, the work is named and, if the person confirms, ended and waited for. A Host
+   * that answers nothing (it crashed, which is why the person restarts it) has no work to
+   * protect, and the restart goes ahead. A Host restart opens the gate again once the new
+   * Host is up; a whole-app relaunch (`exits`) leaves it closed, the process is leaving.
+   */
+  async requestRestart(intent: "restart-host" | "relaunch", restart: () => Promise<void> | void, exits = false): Promise<boolean> {
+    if (this.phase !== "idle") {
+      this.options.log(`exit: a request is already under way (${intent})`);
+      return false;
+    }
+    this.phase = "handoff";
+    try {
+      await this.attempt(this.options.work.setGate(false), "closing the gate");
+      let items = await this.busyNow();
+      this.options.log(`${intent}: the gate is closed and ${items.length ? `${items.length} kind(s) of work are on` : "nothing is on"}`);
+      if (items.length > 0) {
+        let confirmed = false;
+        try {
+          confirmed = await this.options.dialog.confirm(items, intent);
+        } catch (exc) {
+          this.options.log(`${intent}: the question failed (${String(exc)}); keeping the work running`);
+        }
+        if (!confirmed) {
+          await this.attempt(this.options.work.setGate(true), "opening the gate");
+          this.options.log(`${intent}: the person keeps running; the gate is open and the work goes on`);
+          return false;
+        }
+        for (let round = 0; round < STOP_ROUNDS; round++) {
+          if (round > 0) this.options.log(`${intent}: work still on after round ${round}; stopping again`);
+          await this.attempt(this.withDeadline(this.options.work.stopAll()), "the stop");
+          items = await this.busyNow();
+          if (items.length === 0) break;
+        }
+        if (items.length > 0) this.options.log(`${intent}: work still on after the stop (${items.map((i) => i.kind).join(", ")}); the restart stops the Host, which ends it`);
+      }
+      if (exits) this.approved = "user";
+      try {
+        await restart();
+      } catch (exc) {
+        this.options.log(`${intent}: ${String(exc)}; the gate opens again`);
+        this.approved = "none";
+        await this.attempt(this.options.work.setGate(true), "opening the gate");
+        return false;
+      }
+      if (!exits) await this.attempt(this.options.work.setGate(true), "opening the gate");
+      return true;
+    } finally {
+      this.phase = "idle";
+    }
+  }
+
+  /** Installation requires known work state and a completed stop; the gate stays closed. */
+  private async installHandoff(intent: ExitIntent, install?: () => void): Promise<boolean> {
+    try {
+      await this.options.work.setGate(false, true);
+      let items = await this.options.work.busy(true);
+      if (items.length && !(await this.options.dialog.confirm(items, intent))) {
+        await this.cancelHandoff();
+        return false;
+      }
+      for (let round = 0; items.length && round < STOP_ROUNDS; round++) {
+        await this.strictDeadline(this.options.work.stopAll(true));
+        items = await this.options.work.busy(true);
+      }
+      if (items.length) throw new Error("work remains after the stop");
+      (install ?? this.options.finish)();
+      this.approved = "user";
+      return true;
+    } catch (exc) {
+      this.options.log(`${intent}: ${String(exc)}; installation cancelled`);
+      await this.cancelHandoff();
+      return false;
+    }
+  }
+
+  /** Cancel an installation handoff that failed before the app quit. */
+  async cancelHandoff(): Promise<void> {
+    await this.attempt(this.options.work.setGate(true), "opening the gate");
+    this.approved = "none";
+    this.phase = "idle";
+  }
+
+  private strictDeadline(stopping: Promise<void>): Promise<void> {
+    let timer: NodeJS.Timeout;
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timer = this.setTimer(() => reject(new Error("the stop did not finish in time")), this.options.stopTimeoutMs ?? STOP_TIMEOUT_MS);
+    });
+    return Promise.race([stopping, deadline]).finally(() => this.clearTimer(timer));
   }
 
   /** The busy check, tolerant: a Host that answers nothing reads as nothing on. */

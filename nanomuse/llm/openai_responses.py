@@ -30,10 +30,16 @@ from nanomuse.llm.base import (
     says_no_tools,
     split_think,
 )
+from nanomuse.llm.openai_chat import PartialStreamError
 from nanomuse.llm.session import client_headers, new_fallback, session_id
 from nanomuse.llm.vision import content_parts, has_images, model_takes_images, without_images
 from nanomuse.logger import logger
 from nanomuse.schema import Function, LLMResponse, Message, Role, ToolCall, new_id
+
+try:  # the SDK's error classes carry a response of the HTTP library the SDK is built on
+    import httpx2 as _httpx  # openai 3.x
+except ImportError:  # pragma: no cover — openai 1.x
+    import httpx as _httpx  # type: ignore[no-redef]
 
 _RETRYABLE = (
     openai.APIConnectionError,
@@ -41,6 +47,25 @@ _RETRYABLE = (
     openai.RateLimitError,
     openai.InternalServerError,
 )
+
+
+def _response_failure(error: Any) -> openai.APIError:
+    """Turn a streamed Responses failure into the SDK class used by normal HTTP failures."""
+    code = str(getattr(error, "code", "") or "")
+    message = str(getattr(error, "message", "") or error or "response failed")
+    request = _httpx.Request("POST", "https://api.openai.invalid/v1/responses")
+    body = {"error": {"code": code, "message": message}}
+    if code in ("rate_limit", "rate_limit_exceeded"):
+        return openai.RateLimitError(
+            message, response=_httpx.Response(429, request=request), body=body
+        )
+    if code in ("bad_request", "invalid_request_error"):
+        return openai.BadRequestError(
+            message, response=_httpx.Response(400, request=request), body=body
+        )
+    return openai.InternalServerError(
+        message, response=_httpx.Response(500, request=request), body=body
+    )
 
 
 def _to_responses_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -63,6 +88,9 @@ def _to_input_items(
 ) -> tuple[str | None, list[dict[str, Any]]]:
     instructions: list[str] = []
     items: list[dict[str, Any]] = []
+    call_id_counts: dict[str, int] = {}
+    used_call_ids: set[str] = set()
+    pending_outputs: dict[str, list[str]] = {}
     for m in messages:
         if m.role == Role.SYSTEM:
             if m.content:
@@ -78,19 +106,34 @@ def _to_input_items(
             if m.content:
                 items.append({"role": "assistant", "content": m.content})
             for tc in m.tool_calls or []:
+                raw_id = tc.id
+                wire_id = raw_id[:64]
+                occurrence = call_id_counts.get(wire_id, 0) + 1
+                while True:
+                    suffix = "" if occurrence == 1 else f"-{occurrence}"
+                    call_id = f"{wire_id[: 64 - len(suffix)]}{suffix}"
+                    if call_id not in used_call_ids:
+                        break
+                    occurrence += 1
+                call_id_counts[wire_id] = occurrence
+                used_call_ids.add(call_id)
+                pending_outputs.setdefault(raw_id, []).append(call_id)
                 items.append(
                     {
                         "type": "function_call",
-                        "call_id": tc.id,
+                        "call_id": call_id,
                         "name": tc.function.name,
                         "arguments": tc.function.wire_arguments(),
                     }
                 )
         elif m.role == Role.TOOL:
+            raw_id = m.tool_call_id or ""
+            queued = pending_outputs.get(raw_id)
+            call_id = queued.pop(0) if queued else raw_id[:64]
             items.append(
                 {
                     "type": "function_call_output",
-                    "call_id": m.tool_call_id or "",
+                    "call_id": call_id,
                     "output": m.content or "",
                 }
             )
@@ -241,19 +284,26 @@ class OpenAIResponsesLLM(BaseLLM):
         think = ThinkStreamFilter()
         final: Any = None
         streamed: list[str] = []
-        async for event in stream:
-            etype = getattr(event, "type", "")
-            if etype == "response.output_text.delta":
-                visible = think.feed(getattr(event, "delta", "") or "")
-                if visible:
-                    streamed.append(visible)
-                    if on_delta:
-                        on_delta(visible)
-            elif etype in ("response.completed", "response.incomplete"):
-                final = getattr(event, "response", None)
-            elif etype == "response.failed":
-                err = getattr(getattr(event, "response", None), "error", None)
-                raise openai.APIError(str(err or "response failed"), request=None, body=None)  # type: ignore[arg-type]
+        try:
+            async for event in stream:
+                etype = getattr(event, "type", "")
+                if etype == "response.output_text.delta":
+                    visible = think.feed(getattr(event, "delta", "") or "")
+                    if visible:
+                        streamed.append(visible)
+                        if on_delta:
+                            on_delta(visible)
+                elif etype in ("response.completed", "response.incomplete"):
+                    final = getattr(event, "response", None)
+                elif etype == "response.failed":
+                    err = getattr(getattr(event, "response", None), "error", None)
+                    raise _response_failure(err)
+        except Exception as exc:
+            if streamed:
+                raise PartialStreamError(
+                    "the model stream failed after visible text was shown; it was not retried"
+                ) from exc
+            raise
         tail = think.flush()
         if tail:
             streamed.append(tail)

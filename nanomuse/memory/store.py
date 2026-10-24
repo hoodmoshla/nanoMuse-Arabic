@@ -5,8 +5,9 @@ by how rare each word is in the store (words in any alphabetic script, Latin, Cy
 Greek, Arabic and the rest, plus character bigrams for CJK, without external
 embeddings); when an embedding endpoint is available (``embeddings.py``) a second
 ranking by meaning is fused in. Memories can always be listed and *forgotten* by the
-user. Every change a tidy-up makes (see ``consolidate.py``) is logged with the text
-it replaced, so it can be undone.
+user. Every change is logged with the text it replaced, so it can be undone: the
+tidy-up's merges, rewrites and drops (see ``consolidate.py``), and a forget from the
+chat, the app or the command line alike.
 """
 
 from __future__ import annotations
@@ -203,10 +204,41 @@ class MemoryStore:
         ).fetchall()
         return [self._row(r) for r in rows]
 
+    def _recent(self, limit: int = 1000) -> list[MemoryItem]:
+        rows = self._conn.execute(
+            "SELECT * FROM memories ORDER BY COALESCE(NULLIF(updated_at, ''), created_at) DESC, rowid DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [self._row(r) for r in rows]
+
     def forget(self, memory_id: str) -> bool:
-        cur = self._conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
+        """Forget one memory by id, logged like every other change.
+
+        The deletion goes into the same log the tidy-up writes, so what was
+        forgotten shows in the memory changes and ``restore`` brings it back.
+        """
+        item = self.get(memory_id)
+        if item is None:
+            return False
+        self._conn.execute("DELETE FROM memories WHERE id = ?", (item.id,))
+        self._log("forget", [item], None, "")
         self._conn.commit()
-        return cur.rowcount > 0
+        return True
+
+    def matching(self, query: str) -> list[MemoryItem]:
+        """Memories whose text contains ``query`` (literally, case-insensitive).
+
+        What ``forget_matching`` would forget, listed first so a caller can show
+        the lines before they go. An empty query matches nothing.
+        """
+        query = query.strip()
+        if not query:
+            return []
+        pattern = "%" + re.sub(r"([\\%_])", r"\\\1", query) + "%"
+        rows = self._conn.execute(
+            "SELECT * FROM memories WHERE content LIKE ? ESCAPE '\\'", (pattern,)
+        ).fetchall()
+        return [self._row(r) for r in rows]
 
     def forget_matching(self, query: str) -> int:
         """Forget every memory whose text contains ``query`` (literally, case-insensitive).
@@ -214,14 +246,7 @@ class MemoryStore:
         An empty query forgets nothing: ``clear`` is the explicit way to drop everything.
         The deletion is logged as one change, so ``restore`` brings the memories back.
         """
-        query = query.strip()
-        if not query:
-            return 0
-        pattern = "%" + re.sub(r"([\\%_])", r"\\\1", query) + "%"
-        rows = self._conn.execute(
-            "SELECT * FROM memories WHERE content LIKE ? ESCAPE '\\'", (pattern,)
-        ).fetchall()
-        items = [self._row(r) for r in rows]
+        items = self.matching(query)
         if not items:
             return 0
         self._conn.executemany("DELETE FROM memories WHERE id = ?", [(m.id,) for m in items])
@@ -270,7 +295,7 @@ class MemoryStore:
 
     def relevant(self, context: str, limit: int = 20) -> list[MemoryItem]:
         """Memories to inject into the system prompt: matches first, then most recent."""
-        items = self.all()
+        items = self._recent()
         if len(items) <= limit:
             return items
         return self._fill(self.search(context, limit=limit), items, limit)
@@ -284,6 +309,8 @@ class MemoryStore:
             if item.id not in seen:
                 matched.append(item)
                 seen.add(item.id)
+        if len(matched) >= limit and limit >= 2 and items and items[0].id not in seen:
+            matched = [*matched[: limit - 1], items[0]]
         return matched
 
     async def search_async(self, query: str, limit: int = 10) -> list[MemoryItem]:
@@ -294,7 +321,7 @@ class MemoryStore:
 
     async def relevant_async(self, context: str, limit: int = 20) -> list[MemoryItem]:
         """``relevant`` with the meaning-based ranking fused in when an index is set up."""
-        items = self.all()
+        items = self._recent()
         if len(items) <= limit:
             return items
         if self.index is not None:
